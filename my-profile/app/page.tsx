@@ -3,64 +3,66 @@
 import { useState } from "react";
 
 export default function Home() {
-  const [vibes, setVibes] = useState(0);
+  const [waves, setWaves] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  const handleVibeClick = () => {
-    setVibes(prev => prev + 1);
+  const handleWaveClick = () => {
+    setWaves(prev => prev + 1);
     setIsAnimating(true);
     setTimeout(() => setIsAnimating(false), 500);
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-screen bg-slate-50 dark:bg-zinc-950 px-4 py-12 transition-colors duration-300">
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-sky-50 to-blue-100 dark:from-slate-950 dark:via-blue-950 dark:to-slate-900 px-4 py-12 transition-colors duration-300 overflow-hidden">
       {/* Decorative Blur Backgrounds */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-violet-400/20 dark:bg-violet-900/10 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 translate-y-1/2 w-80 h-80 rounded-full bg-cyan-400/20 dark:bg-cyan-900/10 blur-3xl pointer-events-none" />
+      <div className="absolute top-1/4 left-1/4 w-80 h-80 rounded-full bg-sky-400/20 dark:bg-sky-900/10 blur-3xl pointer-events-none animate-pulse-slow" />
+      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-blue-400/20 dark:bg-blue-900/15 blur-3xl pointer-events-none animate-pulse-slow" style={{ animationDelay: '2s' }} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-cyan-300/15 dark:bg-cyan-900/5 blur-3xl pointer-events-none" />
 
       {/* Main Profile Card */}
-      <div className="relative w-full max-w-md bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-slate-200/50 dark:border-zinc-800/50 shadow-2xl rounded-3xl p-8 md:p-10 flex flex-col items-center text-center transition-all duration-300 hover:shadow-cyan-500/5 dark:hover:shadow-violet-500/5">
+      <div className="relative w-full max-w-md bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl border border-white/40 dark:border-slate-800/40 shadow-[0_20px_50px_rgba(8,112,184,0.12)] rounded-3xl p-8 md:p-10 flex flex-col items-center text-center transition-all duration-500 hover:shadow-[0_20px_50px_rgba(8,112,184,0.22)]">
         
         {/* Sparkle badge */}
-        <div className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 text-amber-500 animate-pulse">
+        <div className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full bg-sky-100/80 dark:bg-sky-900/40 text-sky-500 dark:text-sky-300 animate-pulse">
           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
             <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
           </svg>
         </div>
 
         {/* Animated Avatar Container */}
-        <div className="relative group cursor-pointer mb-6">
+        <div className="relative group cursor-pointer mb-6 animate-wave-float">
           {/* Animated glow border */}
-          <div className="absolute -inset-1 bg-gradient-to-r from-violet-600 to-cyan-500 rounded-full blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-tilt" />
+          <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-sky-400 to-cyan-500 rounded-full blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-tilt" />
           
-          {/* Inner circle */}
-          <div className="relative w-28 h-28 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white dark:border-zinc-950">
-            <svg className="w-14 h-14 text-violet-600 dark:text-cyan-400 animate-float" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+          {/* Inner circle - Drop/Water representation */}
+          <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-950 shadow-inner">
+            <svg className="w-14 h-14 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5a3 3 0 0 0-3 3" />
             </svg>
-            <div className="absolute inset-0 bg-gradient-to-tr from-violet-500/10 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-tr from-sky-400/10 to-transparent pointer-events-none" />
           </div>
         </div>
 
         {/* User Info */}
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50 mb-1">
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-2">
           전혜림
         </h1>
         
-        <p className="text-sm font-semibold tracking-wide text-violet-600 dark:text-cyan-400 uppercase mb-5">
-          Junior Vibe Coder
+        <p className="text-xs font-bold tracking-wider text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/50 px-3 py-1 rounded-full mb-5 border border-blue-100 dark:border-blue-900/30">
+          시원한 솔루션을 만드는 코더 🌊
         </p>
 
-        <p className="text-base md:text-lg text-slate-600 dark:text-zinc-300 leading-relaxed font-normal mb-8 max-w-sm">
-          안녕하세요! 바이브 코딩을 배우고 있는 대학생입니다.
+        <p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed font-normal mb-8 max-w-sm">
+          안녕하세요! 파란 바다처럼 맑고 넓은 시선으로 효율적인 코드를 고민하는 개발자 전혜림입니다. 새로운 기술을 배우고 적용하는 과정을 즐깁니다.
         </p>
 
         {/* Tags */}
         <div className="flex flex-wrap justify-center gap-2 mb-8">
-          {["React", "Next.js", "TailwindCSS", "Vibe Coding", "대학생"].map((tag) => (
+          {["React", "Next.js", "TailwindCSS", "TypeScript", "🌊청량한코딩"].map((tag) => (
             <span
               key={tag}
-              className="px-3.5 py-1 text-xs font-semibold text-slate-600 dark:text-zinc-400 bg-slate-100 dark:bg-zinc-800/50 rounded-full border border-slate-200/30 dark:border-zinc-700/30 transition-all duration-300 hover:scale-105 hover:bg-slate-200/50 dark:hover:bg-zinc-800"
+              className="px-3.5 py-1 text-xs font-semibold text-blue-700 dark:text-sky-300 bg-blue-50/60 dark:bg-sky-950/40 rounded-full border border-blue-100/50 dark:border-sky-900/30 transition-all duration-300 hover:scale-105 hover:bg-blue-100 dark:hover:bg-sky-900/60"
             >
               #{tag}
             </span>
@@ -68,26 +70,26 @@ export default function Home() {
         </div>
 
         {/* Divider */}
-        <div className="w-full h-px bg-slate-200/80 dark:bg-zinc-800/80 mb-8" />
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-blue-200 dark:via-blue-800 to-transparent mb-8" />
 
-        {/* Interactive Vibe Button */}
+        {/* Interactive Wave Button */}
         <div className="w-full flex flex-col items-center gap-3 mb-6">
           <button
-            onClick={handleVibeClick}
+            onClick={handleWaveClick}
             className={`relative px-6 py-3 rounded-2xl font-bold text-sm shadow-md transition-all duration-300 flex items-center gap-2 select-none active:scale-95 cursor-pointer ${
               isAnimating 
-                ? 'bg-cyan-500 text-white scale-95 ring-4 ring-cyan-500/30'
-                : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:shadow-lg hover:shadow-violet-500/20 hover:-translate-y-0.5'
+                ? 'bg-sky-500 text-white scale-95 ring-4 ring-sky-300/50'
+                : 'bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-sky-500/35 hover:-translate-y-0.5'
             }`}
           >
             <svg className={`w-4 h-4 ${isAnimating ? 'animate-bounce' : 'animate-pulse'}`} fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
             </svg>
-            {isAnimating ? 'Vibe Sent! ⚡' : 'Send Vibe'}
+            {isAnimating ? '파도 전송 완료! 🌊' : '파도 보내기 🌊'}
           </button>
           
-          <p className="text-xs text-slate-500 dark:text-zinc-400">
-            Received vibes: <span className="font-bold text-violet-600 dark:text-cyan-400">{vibes}</span>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            보낸 파도: <span className="font-bold text-blue-600 dark:text-sky-400">{waves}</span> 개
           </p>
         </div>
 
@@ -97,7 +99,7 @@ export default function Home() {
             href="https://github.com"
             target="_blank"
             rel="noreferrer"
-            className="text-slate-400 hover:text-slate-900 dark:text-zinc-500 dark:hover:text-zinc-100 transition-colors"
+            className="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-sky-400 transition-colors"
             title="GitHub"
           >
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
@@ -106,7 +108,7 @@ export default function Home() {
           </a>
           <a
             href="mailto:contact@example.com"
-            className="text-slate-400 hover:text-slate-900 dark:text-zinc-500 dark:hover:text-zinc-100 transition-colors"
+            className="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-sky-400 transition-colors"
             title="Email"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
