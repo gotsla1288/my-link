@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { links, Link as LinkType } from "@/data/links";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
 import {
   BookOpen,
   Briefcase,
@@ -13,6 +13,9 @@ import {
   ExternalLink,
   AlertCircle,
   Plus,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import LinkAddDialog from "@/components/LinkAddDialog";
 
@@ -80,6 +83,13 @@ export default function Page() {
   const [isMounted, setIsMounted] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 인라인 편집 상태 추가
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editErrors, setEditErrors] = useState<{ title?: string; url?: string }>({});
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Firestore로부터 링크 데이터 로드 함수
   const fetchLinks = async () => {
@@ -159,6 +169,82 @@ export default function Page() {
       setLinkList((prevList) => [newLinkWithId, ...prevList]);
     } catch (error) {
       console.error("Firestore에 링크를 추가하는 중 에러 발생:", error);
+    }
+  };
+
+  // 인라인 편집 시작 핸들러
+  const handleStartEdit = (link: LinkType) => {
+    setEditingLinkId(link.id);
+    setEditTitle(link.title);
+    setEditUrl(link.url);
+    setEditErrors({});
+  };
+
+  // 인라인 편집 취소 핸들러
+  const handleCancelEdit = () => {
+    setEditingLinkId(null);
+    setEditTitle("");
+    setEditUrl("");
+    setEditErrors({});
+  };
+
+  // 인라인 편집 저장 핸들러
+  const handleSaveEdit = async (linkId: string) => {
+    const newErrors: { title?: string; url?: string } = {};
+
+    if (!editTitle.trim()) {
+      newErrors.title = "링크 제목을 입력해주세요.";
+    } else if (editTitle.length > 50) {
+      newErrors.title = "제목은 최대 50자까지 입력 가능합니다.";
+    }
+
+    if (!editUrl.trim()) {
+      newErrors.url = "URL을 입력해주세요.";
+    } else if (!/^https?:\/\//i.test(editUrl.trim())) {
+      newErrors.url = "http:// 또는 https:// 로 시작하는 올바른 URL을 입력해주세요.";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setEditErrors(newErrors);
+      return;
+    }
+
+    setIsUpdating(true);
+
+    // URL에서 호스트 이름을 추출하여 부제목(subtitle)으로 자동 할당
+    let subtitle = "";
+    try {
+      const parsedUrl = new URL(editUrl.trim());
+      subtitle = parsedUrl.hostname.replace("www.", "");
+    } catch {
+      subtitle = editUrl.trim();
+    }
+
+    try {
+      const docRef = doc(db, "users", "anonymous", "links", linkId);
+      await updateDoc(docRef, {
+        title: editTitle.trim(),
+        url: editUrl.trim(),
+        subtitle: subtitle || undefined,
+      });
+
+      // 로컬 상태 동기화 업데이트
+      setLinkList((prevList) =>
+        prevList.map((link) =>
+          link.id === linkId
+            ? { ...link, title: editTitle.trim(), url: editUrl.trim(), subtitle: subtitle || undefined }
+            : link
+        )
+      );
+
+      setEditingLinkId(null);
+      setEditTitle("");
+      setEditUrl("");
+      setEditErrors({});
+    } catch (error) {
+      console.error("Firestore 링크 업데이트 중 에러 발생:", error);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -347,19 +433,112 @@ export default function Page() {
 
                   const platform = link.platform || "portfolio";
 
+                  if (editingLinkId === link.id) {
+                    return (
+                      <div
+                        key={link.id}
+                        className="flex flex-col p-5 rounded-2xl border backdrop-blur-md shadow-lg bg-zinc-950/80 border-zinc-700/50 space-y-4 transition-all duration-300"
+                        style={{
+                          animationDelay: `${idx * 70}ms`,
+                          animationFillMode: "both",
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-3 bg-black/30 rounded-xl text-zinc-450">
+                            {platformIcons[platform]}
+                          </div>
+                          <span className="text-xs font-semibold text-zinc-450 uppercase tracking-wider">
+                            링크 인라인 편집
+                          </span>
+                        </div>
+
+                        <div className="space-y-3.5">
+                          {/* 제목 입력 */}
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
+                              제목
+                            </label>
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              placeholder="링크 제목"
+                              maxLength={50}
+                              className={`w-full px-3.5 py-2.5 bg-black/40 border ${
+                                editErrors.title ? "border-red-500" : "border-zinc-800 focus:border-violet-500"
+                              } rounded-xl text-sm text-zinc-100 focus:outline-none transition-all`}
+                            />
+                            {editErrors.title && (
+                              <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                {editErrors.title}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* 주소 입력 */}
+                          <div>
+                            <label className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
+                              주소 (URL)
+                            </label>
+                            <input
+                              type="text"
+                              value={editUrl}
+                              onChange={(e) => setEditUrl(e.target.value)}
+                              placeholder="https://example.com"
+                              className={`w-full px-3.5 py-2.5 bg-black/40 border ${
+                                editErrors.url ? "border-red-500" : "border-zinc-800 focus:border-violet-500"
+                              } rounded-xl text-sm text-zinc-100 focus:outline-none transition-all`}
+                            />
+                            {editErrors.url && (
+                              <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                {editErrors.url}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 저장 / 취소 버튼 */}
+                        <div className="flex items-center justify-end gap-2 pt-2.5 border-t border-zinc-850">
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            disabled={isUpdating}
+                            className="px-3.5 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200 bg-zinc-900/60 border border-zinc-800/80 hover:bg-zinc-900 rounded-xl transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>취소</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(link.id)}
+                            disabled={isUpdating}
+                            className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-violet-600 to-indigo-600 rounded-xl hover:opacity-90 transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center gap-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{isUpdating ? "저장 중..." : "저장"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
-                    <a
+                    <div
                       key={link.id}
-                      href={link.url}
-                      target="_blank"
-                      rel="noreferrer"
                       className={`group flex items-center justify-between p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 ${tintStyles[platform]}`}
                       style={{
                         animationDelay: `${idx * 70}ms`,
                         animationFillMode: "both",
                       }}
                     >
-                      <div className="flex items-center gap-4">
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 flex items-center gap-4 cursor-pointer"
+                      >
                         <div className="p-3 bg-black/30 rounded-xl">
                           {platformIcons[platform]}
                         </div>
@@ -378,9 +557,34 @@ export default function Page() {
                             </div>
                           )}
                         </div>
+                      </a>
+
+                      <div className="flex items-center gap-2">
+                        {/* 수정 버튼 (연필 이모티콘) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleStartEdit(link);
+                          }}
+                          className="p-2 rounded-xl bg-black/35 hover:bg-black/55 text-zinc-300 hover:text-white lg:opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-105 active:scale-[0.95] cursor-pointer border border-zinc-800/40"
+                          title="수정"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 text-zinc-400 hover:text-white transition-all duration-300 hover:scale-105"
+                          title="새 창에서 열기"
+                        >
+                          <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
+                        </a>
                       </div>
-                      <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
-                    </a>
+                    </div>
                   );
                 })
               )}
