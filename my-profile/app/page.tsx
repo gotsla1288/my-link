@@ -2,188 +2,314 @@
 
 import { useState } from "react";
 
-export default function Home() {
-  const [waves, setWaves] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
+/* ─── 링크 데이터 ─────────────────────────── */
+interface LinkItem {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  icon: React.ReactNode;
+  cardStyle: string;
+  iconBg: string;
+}
 
-  const handleWaveClick = () => {
+const LINKS: LinkItem[] = [
+  {
+    id: "github",
+    title: "GitHub",
+    url: "https://github.com",
+    description: "github.com/hyerim",
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.577.688.479C19.138 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
+      </svg>
+    ),
+    cardStyle: "bg-white/8 text-white border-white/10 hover:bg-white/16 hover:border-white/22",
+    iconBg: "bg-white/15",
+  },
+  {
+    id: "blog",
+    title: "기술 블로그",
+    url: "https://velog.io",
+    description: "velog.io/@hyerim",
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M3 5h18a1 1 0 010 2H3a1 1 0 110-2zm0 6h18a1 1 0 010 2H3a1 1 0 110-2zm0 6h11a1 1 0 010 2H3a1 1 0 110-2z" />
+      </svg>
+    ),
+    cardStyle: "bg-emerald-500/12 text-emerald-100 border-emerald-500/18 hover:bg-emerald-500/22 hover:border-emerald-400/32",
+    iconBg: "bg-emerald-400/20",
+  },
+  {
+    id: "linkedin",
+    title: "LinkedIn",
+    url: "https://linkedin.com",
+    description: "linkedin.com/in/hyerim",
+    icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+      </svg>
+    ),
+    cardStyle: "bg-blue-500/12 text-blue-100 border-blue-500/18 hover:bg-blue-500/22 hover:border-blue-400/32",
+    iconBg: "bg-blue-400/20",
+  },
+  {
+    id: "portfolio",
+    title: "포트폴리오",
+    url: "https://hyerim.dev",
+    description: "hyerim.dev",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.711-1.422 2.572A48.776 48.776 0 0112 18.75a48.776 48.776 0 01-7.781.625c-1.448.14-2.421-1.572-1.422-2.572L5 14.5" />
+      </svg>
+    ),
+    cardStyle: "bg-purple-500/12 text-purple-100 border-purple-500/18 hover:bg-purple-500/22 hover:border-purple-400/32",
+    iconBg: "bg-purple-400/20",
+  },
+];
+
+/* ─── 파도 위젯 ──────────────────────────────── */
+function WaveWidget() {
+  const [waves, setWaves] = useState(42);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [ripples, setRipples] = useState<number[]>([]);
+
+  const fillPct = Math.min(waves * 1.8, 100);
+
+  const handleWave = () => {
     setWaves(prev => prev + 1);
     setIsAnimating(true);
-    setTimeout(() => setIsAnimating(false), 500);
+    setRipples(prev => [...prev, Date.now()]);
+    setTimeout(() => setIsAnimating(false), 600);
+    setTimeout(() => setRipples(prev => prev.slice(1)), 1000);
   };
 
-  // 파도 레벨 계산 (최대 100%까지, 한 번 누를 때마다 차오름)
-  const waveFillPercentage = Math.min(waves * 5, 100);
-
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-8 md:py-16 md:px-8 lg:px-16 transition-colors duration-500 overflow-hidden">
-      {/* Decorative Blur Backgrounds (Floating spheres) */}
-      <div className="absolute top-12 left-10 w-96 h-96 rounded-full bg-blue-400/20 dark:bg-blue-900/10 blur-3xl pointer-events-none animate-orb-1" />
-      <div className="absolute bottom-20 right-10 w-96 h-96 rounded-full bg-cyan-400/20 dark:bg-cyan-900/10 blur-3xl pointer-events-none animate-orb-2" />
-      <div className="absolute top-1/2 left-2/3 -translate-x-1/2 w-80 h-80 rounded-full bg-sky-300/15 dark:bg-sky-900/5 blur-3xl pointer-events-none animate-pulse-slow" />
-      <div className="absolute bottom-1/3 left-1/3 w-80 h-80 rounded-full bg-indigo-300/15 dark:bg-indigo-900/5 blur-3xl pointer-events-none animate-pulse-slow" style={{ animationDelay: '3s' }} />
-
-      {/* Main Grid Wrapper */}
-      <div className="relative max-w-6xl w-full grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 z-10">
-        
-        {/* 1. Hero & About Card */}
-        <div className="lg:col-span-7 bg-white/40 dark:bg-slate-900/40 backdrop-blur-2xl border border-white/50 dark:border-slate-800/40 rounded-3xl p-8 md:p-10 flex flex-col justify-between shadow-glass transition-all duration-500 hover:shadow-glass-strong">
-          <div>
-            {/* Sparkle Badge */}
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50/80 dark:bg-blue-950/40 border border-blue-100/50 dark:border-blue-900/30 text-blue-600 dark:text-sky-400 text-xs font-semibold uppercase tracking-wider mb-6">
-              <svg className="w-3.5 h-3.5 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-              시원한 솔루션을 만드는 코더 🌊
-            </div>
-
-            <h1 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white leading-tight mb-6">
-              바다처럼 깊고,<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-500 dark:from-blue-400 dark:via-sky-300 dark:to-cyan-300">파도처럼 역동적인</span><br />
-              코드를 작성합니다.
-            </h1>
-
-            <p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed font-normal max-w-xl">
-              안녕하세요! 프론트엔드 개발자 전혜림입니다. 사용하기 명쾌하고 미학적으로 완성도 높은 인터랙션을 효율적인 코드로 설계하는 과정에서 큰 보람을 느낍니다. 매 순간 배움의 파도 위에서 성장을 멈추지 않는 개발자가 되기 위해 노력하고 있습니다.
-            </p>
-          </div>
-
-          {/* Mini Profile Info Row */}
-          <div className="flex items-center gap-4 mt-10 pt-6 border-t border-slate-200/40 dark:border-slate-800/40">
-            <div className="relative group cursor-pointer">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-sky-400 rounded-full blur opacity-50 group-hover:opacity-80 transition duration-300" />
-              <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-sky-50 to-blue-100 dark:from-slate-800 dark:to-slate-900 flex items-center justify-center overflow-hidden border border-white dark:border-slate-950">
-                <svg className="w-7 h-7 text-blue-500 dark:text-sky-400 animate-wave-float" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5a3 3 0 0 0-3 3" />
-                </svg>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">전혜림</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">React & Next.js Developer</p>
-            </div>
-          </div>
+    <div className="glass-card rounded-3xl p-6 flex flex-col gap-5">
+      {/* 헤더 */}
+      <div className="flex items-center gap-3">
+        <span className="text-2xl select-none">🌊</span>
+        <div>
+          <h2 className="text-base font-bold text-white leading-tight">파도 보내기</h2>
+          <p className="text-xs text-purple-300/60 mt-0.5">청량한 에너지를 전송해 주세요</p>
         </div>
-
-        {/* 2. Interactive Wave Widget */}
-        <div className="lg:col-span-5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-2xl border border-white/50 dark:border-slate-800/40 rounded-3xl p-8 md:p-10 flex flex-col justify-between shadow-glass transition-all duration-500 hover:shadow-glass-strong relative overflow-hidden">
-          <div>
-            <h2 className="text-xl font-extrabold text-slate-800 dark:text-white mb-2">파도 보내기 🌊</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal mb-6">
-              전혜림 개발자에게 청량한 에너지를 전송해 주세요. 파도가 쌓이면 내부 수조 게이지가 차오릅니다.
-            </p>
-          </div>
-
-          {/* Interactive visual gauge */}
-          <div className="relative w-full bg-sky-50/50 dark:bg-slate-950/40 rounded-2xl h-44 overflow-hidden border border-sky-100/30 dark:border-sky-900/20 shadow-inner flex flex-col items-center justify-center mb-6">
-            {/* Water Wave Fill */}
-            <div 
-              className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-blue-600/30 via-sky-500/20 to-transparent transition-all duration-700 ease-out"
-              style={{ height: `${waveFillPercentage}%` }}
-            />
-            {/* Floating ripples inside */}
-            {waves > 0 && (
-              <div className="absolute inset-x-0 bottom-0 h-4 bg-sky-400/20 animate-pulse pointer-events-none" style={{ bottom: `${waveFillPercentage - 2}%` }} />
-            )}
-            
-            <div className="z-10 text-center">
-              <span className="text-4xl md:text-5xl font-black text-blue-600 dark:text-sky-300 tracking-tight transition-all duration-300">
-                {waves}
-              </span>
-              <p className="text-[10px] uppercase font-bold text-sky-600 dark:text-sky-400 tracking-widest mt-1">
-                Waves Received
-              </p>
-            </div>
-          </div>
-
-          <div className="w-full flex flex-col items-center gap-3">
-            <button
-              onClick={handleWaveClick}
-              className={`w-full py-4 rounded-2xl font-bold text-sm shadow-md transition-all duration-300 flex items-center justify-center gap-2 select-none active:scale-95 cursor-pointer ${
-                isAnimating 
-                  ? 'bg-sky-500 text-white scale-95 ring-4 ring-sky-300/50 shadow-sky-500/20'
-                  : 'bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-sky-500/20 hover:-translate-y-0.5'
-              }`}
-            >
-              <svg className={`w-4 h-4 ${isAnimating ? 'animate-bounce' : 'animate-pulse'}`} fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-              </svg>
-              {isAnimating ? '파도 전송 완료! 🌊' : '파도 보내기 🌊'}
-            </button>
-          </div>
-        </div>
-
-        {/* 3. Tech Stack Grid Card */}
-        <div className="lg:col-span-8 bg-white/40 dark:bg-slate-900/40 backdrop-blur-2xl border border-white/50 dark:border-slate-800/40 rounded-3xl p-8 shadow-glass transition-all duration-500 hover:shadow-glass-strong">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-            기술 스택
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { name: "React", desc: "컴포넌트 설계 및 상태 관리", level: "Expert" },
-              { name: "Next.js", desc: "RSC 및 SSR 웹 서비스", level: "Intermediate" },
-              { name: "TailwindCSS", desc: "반응형 및 커스텀 스타일링", level: "Expert" },
-              { name: "TypeScript", desc: "타입 안정성 및 구조 설계", level: "Intermediate" }
-            ].map((tech) => (
-              <div 
-                key={tech.name}
-                className="p-5 rounded-2xl bg-white/50 dark:bg-slate-850/40 border border-white/40 dark:border-slate-800/20 flex flex-col justify-between transition-all duration-300 hover:scale-102 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 group"
-              >
-                <div>
-                  <span className="text-xs font-semibold text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-md border border-blue-100/30 dark:border-blue-900/20">
-                    {tech.level}
-                  </span>
-                  <h4 className="text-base font-extrabold text-slate-800 dark:text-white mt-3 group-hover:text-blue-600 dark:group-hover:text-sky-400 transition-colors">
-                    {tech.name}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal mt-2">
-                  {tech.desc}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 4. Social Links Card */}
-        <div className="lg:col-span-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-2xl border border-white/50 dark:border-slate-800/40 rounded-3xl p-8 shadow-glass transition-all duration-500 hover:shadow-glass-strong flex flex-col justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-sky-400"></span>
-              네트워크 연결
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal mb-6">
-              프로젝트 협업 제안 및 문의는 아래 채널을 이용해 연락해 주세요.
-            </p>
-          </div>
-          
-          <div className="flex flex-col gap-3">
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/50 dark:bg-slate-800/30 border border-white/30 dark:border-slate-850/30 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-sky-400 transition-colors"
-            >
-              <svg className="w-5 h-5 text-slate-600 dark:text-slate-400" fill="currentColor" viewBox="0 0 24 24">
-                <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.577.688.479C19.138 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
-              </svg>
-              GitHub 리포지토리 방문
-            </a>
-            <a
-              href="mailto:contact@example.com"
-              className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/50 dark:bg-slate-800/30 border border-white/30 dark:border-slate-850/30 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-sky-400 transition-colors"
-            >
-              <svg className="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              이메일로 문의 남기기
-            </a>
-          </div>
-        </div>
-
       </div>
+
+      {/* 수조 게이지 */}
+      <div
+        className="relative w-full rounded-2xl overflow-hidden border border-white/8"
+        style={{ height: 140, background: "rgba(8,6,28,0.65)" }}
+      >
+        {/* 물 채우기 */}
+        <div
+          className="absolute bottom-0 left-0 w-full water-fill"
+          style={{
+            height: `${fillPct}%`,
+            background: "linear-gradient(to top, rgba(56,189,248,0.50) 0%, rgba(99,102,241,0.30) 100%)",
+          }}
+        />
+
+        {/* 파도 표면 SVG */}
+        {fillPct > 0 && (
+          <div
+            className="absolute left-0 w-full pointer-events-none overflow-hidden"
+            style={{ bottom: `calc(${fillPct}% - 10px)` }}
+          >
+            <svg
+              viewBox="0 0 400 20"
+              preserveAspectRatio="none"
+              className="w-full"
+              style={{ height: 20 }}
+            >
+              <path
+                d="M0,8 Q50,2 100,8 Q150,14 200,8 Q250,2 300,8 Q350,14 400,8 L400,20 L0,20 Z"
+                fill="rgba(125,211,252,0.35)"
+              />
+            </svg>
+          </div>
+        )}
+
+        {/* 카운터 */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 select-none">
+          <span
+            className={`text-5xl font-black text-sky-200 transition-all duration-300 ${isAnimating ? "animate-bounce-in scale-125" : ""}`}
+          >
+            {waves}
+          </span>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-sky-400/70 mt-1.5">
+            Waves Received
+          </span>
+        </div>
+
+        {/* 리플 */}
+        {ripples.map(id => (
+          <div
+            key={id}
+            className="absolute inset-0 rounded-2xl border-2 border-sky-400/40 pointer-events-none"
+            style={{ animation: "ripple 0.9s ease-out forwards" }}
+          />
+        ))}
+      </div>
+
+      {/* 파도 보내기 버튼 */}
+      <button
+        id="wave-btn"
+        onClick={handleWave}
+        className={`ripple-btn w-full py-4 rounded-2xl font-bold text-sm text-white transition-all duration-300 flex items-center justify-center gap-2 select-none active:scale-95 cursor-pointer ${
+          isAnimating
+            ? "bg-sky-500 shadow-lg shadow-sky-500/30"
+            : "bg-gradient-to-r from-violet-600 via-blue-500 to-sky-400 hover:shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5"
+        }`}
+      >
+        <svg
+          className={`w-4 h-4 ${isAnimating ? "animate-bounce" : "animate-pulse"}`}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 15s2-1 4 0 4 2 6 1 4-2 6-1" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 19s2-1 4 0 4 2 6 1 4-2 6-1" />
+        </svg>
+        {isAnimating ? "🌊 파도 전송 완료!" : "🌊 파도 보내기"}
+      </button>
+    </div>
+  );
+}
+
+/* ─── LEFT: 프로필 사이드바 ──────────────────── */
+function ProfileSidebar() {
+  return (
+    <aside className="lg:sticky lg:top-10 flex flex-col items-center lg:items-start gap-6 text-center lg:text-left">
+
+      {/* 아바타 */}
+      <div className="animate-float-avatar relative self-center lg:self-start">
+        <div className="absolute -inset-1.5 rounded-full avatar-ring opacity-75 blur-sm" />
+        <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-violet-600 via-indigo-600 to-sky-500 p-[3px] shadow-2xl shadow-violet-900/60">
+          <div className="w-full h-full rounded-full bg-[#0d0a1e] flex items-center justify-center overflow-hidden">
+            <span className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-violet-300 to-sky-300 select-none">
+              전
+            </span>
+          </div>
+        </div>
+        {/* 온라인 뱃지 */}
+        <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-[#0d0a1e] shadow-md" />
+      </div>
+
+      {/* 이름 / 직함 / 소개 */}
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-black text-white tracking-tight">전혜림</h1>
+        <p className="text-sm font-semibold text-purple-300/80">Frontend Developer</p>
+        <p className="text-[13px] text-slate-400 leading-relaxed max-w-[280px]">
+          사용하기 명쾌하고 미학적으로 완성도 높은 인터랙션을 효율적인 코드로 설계합니다 ✨
+        </p>
+      </div>
+
+      {/* 소셜 아이콘 */}
+      <div className="flex items-center gap-2">
+        {[
+          { label: "GitHub", text: "GH" },
+          { label: "Twitter", text: "𝕏" },
+          { label: "Instagram", text: "IG" },
+        ].map(s => (
+          <button
+            key={s.label}
+            aria-label={s.label}
+            className="w-9 h-9 rounded-full glass-card flex items-center justify-center text-[11px] font-bold text-purple-200/80 hover:text-white hover:bg-white/15 transition-all duration-200 cursor-pointer"
+          >
+            {s.text}
+          </button>
+        ))}
+      </div>
+
+      {/* 구분선 */}
+      <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent hidden lg:block" />
+
+      {/* CTA 배지 */}
+      <a
+        href="/"
+        id="cta-badge"
+        className="animate-badge-glow glass-card inline-flex items-center gap-2 px-5 py-3 rounded-full text-sm font-semibold text-purple-200 hover:text-white transition-colors duration-200 cursor-pointer group self-center lg:self-start"
+      >
+        <svg
+          className="w-4 h-4 text-violet-400 group-hover:rotate-12 transition-transform duration-300"
+          fill="currentColor" viewBox="0 0 20 20"
+        >
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+        </svg>
+        마이링크로 만들기
+        <svg className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+        </svg>
+      </a>
+    </aside>
+  );
+}
+
+/* ─── RIGHT: 링크 + 위젯 ────────────────────── */
+function ContentPanel() {
+  return (
+    <div className="flex flex-col gap-3">
+      {/* 링크 카드 목록 */}
+      <div className="flex flex-col gap-3" role="list" aria-label="링크 목록">
+        {LINKS.map((link, i) => (
+          <a
+            key={link.id}
+            id={`link-${link.id}`}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            role="listitem"
+            className={`link-card-anim glass-card-hover flex items-center gap-4 px-5 py-4 rounded-2xl border transition-all duration-200 group ${link.cardStyle}`}
+            style={{ animationDelay: `${i * 0.07}s` }}
+          >
+            {/* 아이콘 */}
+            <div className={`flex-shrink-0 w-11 h-11 rounded-xl ${link.iconBg} flex items-center justify-center transition-transform duration-200 group-hover:scale-110`}>
+              {link.icon}
+            </div>
+
+            {/* 텍스트 */}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold leading-tight">{link.title}</p>
+              {link.description && (
+                <p className="text-[11px] opacity-45 mt-0.5 truncate">{link.description}</p>
+              )}
+            </div>
+
+            {/* 화살표 */}
+            <svg
+              className="w-4 h-4 opacity-35 group-hover:opacity-75 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200 flex-shrink-0"
+              fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+          </a>
+        ))}
+      </div>
+
+      {/* 파도 위젯 */}
+      <WaveWidget />
+    </div>
+  );
+}
+
+/* ─── 메인 페이지 ────────────────────────────── */
+export default function Home() {
+  return (
+    <div className="relative flex min-h-dvh w-full items-start justify-center px-6 py-12 overflow-hidden">
+
+      {/* 배경 오브 */}
+      <div className="fixed top-0 left-0 w-[600px] h-[600px] rounded-full bg-violet-800/20 blur-3xl pointer-events-none animate-orb-1 -translate-x-1/3 -translate-y-1/4" />
+      <div className="fixed bottom-0 right-0 w-[500px] h-[500px] rounded-full bg-sky-700/20 blur-3xl pointer-events-none animate-orb-2 translate-x-1/4 translate-y-1/4" />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-indigo-900/20 blur-3xl pointer-events-none animate-pulse-slow" />
+
+      {/* 메인 컨테이너 */}
+      <main className="relative z-10 w-full max-w-5xl">
+
+        {/* 2컬럼 그리드 (데스크탑) / 단일 컬럼 (모바일) */}
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 lg:gap-14 lg:items-start">
+          <ProfileSidebar />
+          <ContentPanel />
+        </div>
+
+      </main>
     </div>
   );
 }
