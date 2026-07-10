@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, AlertCircle, BookOpen, Briefcase, Plus } from "lucide-react";
+import { X, AlertCircle, BookOpen, Briefcase, Plus, Loader2 } from "lucide-react";
 import { Link as LinkType } from "@/data/links";
 
 // Custom SVG Icons to match page.tsx
@@ -70,7 +70,7 @@ const LinkedinIcon = ({ className }: { className?: string }) => (
 interface LinkAddDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (newLink: Omit<LinkType, "id" | "order" | "clickCount">) => void;
+  onAdd: (newLink: Omit<LinkType, "id" | "order" | "clickCount">) => Promise<void> | void;
   existingUrls?: string[];
 }
 
@@ -83,6 +83,7 @@ export default function LinkAddDialog({ isOpen, onClose, onAdd, existingUrls = [
   const [platform, setPlatform] = useState<PlatformType>("portfolio");
   const [isActive, setIsActive] = useState(true);
   const [errors, setErrors] = useState<{ title?: string; url?: string }>({});
+  const [isPending, setIsPending] = useState(false);
 
   if (!isOpen) return null;
 
@@ -124,10 +125,11 @@ export default function LinkAddDialog({ isOpen, onClose, onAdd, existingUrls = [
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validate()) return;
+    setIsPending(true);
 
     // URL에서 호스트 이름을 추출하여 부제목(subtitle)으로 자동 할당
     let subtitle = "";
@@ -138,24 +140,30 @@ export default function LinkAddDialog({ isOpen, onClose, onAdd, existingUrls = [
       subtitle = url.trim();
     }
 
-    onAdd({
-      title: title.trim(),
-      url: url.trim(),
-      description: description.trim() || undefined,
-      platform,
-      isActive,
-      subtitle: subtitle || undefined,
-      icon: platform,
-    });
+    try {
+      await onAdd({
+        title: title.trim(),
+        url: url.trim(),
+        description: description.trim() || undefined,
+        platform,
+        isActive,
+        subtitle: subtitle || undefined,
+        icon: platform,
+      });
 
-    // Reset Form
-    setTitle("");
-    setUrl("");
-    setDescription("");
-    setPlatform("portfolio");
-    setIsActive(true);
-    setErrors({});
-    onClose();
+      // Reset Form
+      setTitle("");
+      setUrl("");
+      setDescription("");
+      setPlatform("portfolio");
+      setIsActive(true);
+      setErrors({});
+      onClose();
+    } catch (error) {
+      console.error("링크 추가 중 에러 발생:", error);
+    } finally {
+      setIsPending(false);
+    }
   };
 
   return (
@@ -163,7 +171,7 @@ export default function LinkAddDialog({ isOpen, onClose, onAdd, existingUrls = [
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
-        onClick={onClose}
+        onClick={() => !isPending && onClose()}
       />
 
       {/* Modal Content */}
@@ -178,7 +186,8 @@ export default function LinkAddDialog({ isOpen, onClose, onAdd, existingUrls = [
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors"
+            disabled={isPending}
+            className="p-1 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -326,15 +335,24 @@ export default function LinkAddDialog({ isOpen, onClose, onAdd, existingUrls = [
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 text-sm font-semibold text-zinc-400 hover:text-zinc-200 bg-zinc-900/60 border border-zinc-800/80 rounded-xl hover:bg-zinc-900 transition-all cursor-pointer"
+              disabled={isPending}
+              className="flex-1 py-3 text-sm font-semibold text-zinc-400 hover:text-zinc-200 bg-zinc-900/60 border border-zinc-800/80 rounded-xl hover:bg-zinc-900 transition-all cursor-pointer disabled:opacity-50"
             >
               취소
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 text-sm font-semibold text-white bg-gradient-to-r from-violet-600 to-indigo-600 rounded-xl hover:opacity-90 transition-all shadow-lg shadow-indigo-900/20 active:scale-[0.98] cursor-pointer"
+              disabled={isPending}
+              className="flex-1 py-3 text-sm font-semibold text-white bg-gradient-to-r from-violet-600 to-indigo-600 rounded-xl hover:opacity-90 transition-all shadow-lg shadow-indigo-900/20 active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2 disabled:opacity-80"
             >
-              추가하기
+              {isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>추가 중...</span>
+                </>
+              ) : (
+                <span>추가하기</span>
+              )}
             </button>
           </div>
         </form>
