@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { links, Link as LinkType } from "@/data/links";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import {
   BookOpen,
   Briefcase,
@@ -16,6 +16,7 @@ import {
   Pencil,
   Check,
   X,
+  Trash2,
 } from "lucide-react";
 import LinkAddDialog from "@/components/LinkAddDialog";
 
@@ -91,6 +92,11 @@ export default function Page() {
   const [editErrors, setEditErrors] = useState<{ title?: string; url?: string }>({});
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // 삭제 확인 모달 상태 추가
+  const [deleteLinkId, setDeleteLinkId] = useState<string | null>(null);
+  const [deleteLinkTitle, setDeleteLinkTitle] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Firestore로부터 링크 데이터 로드 함수
   const fetchLinks = async () => {
     setIsLoading(true);
@@ -159,14 +165,9 @@ export default function Page() {
     };
 
     try {
-      const docRef = await addDoc(collection(db, "users", "anonymous", "links"), newFirestoreLink);
-      // 전체 데이터를 재페치하지 않고, 생성된 ID를 할당해 로컬 상태를 즉각 업데이트합니다.
-      const newLinkWithId: LinkType = {
-        id: docRef.id,
-        ...newFirestoreLink,
-      };
-      // 최신순(desc)이므로 새로운 링크는 맨 앞에 배치합니다.
-      setLinkList((prevList) => [newLinkWithId, ...prevList]);
+      await addDoc(collection(db, "users", "anonymous", "links"), newFirestoreLink);
+      // 변경사항이 있으므로 fetchLinks()를 재호출하여 최신 데이터를 가져옵니다.
+      await fetchLinks();
     } catch (error) {
       console.error("Firestore에 링크를 추가하는 중 에러 발생:", error);
     }
@@ -228,14 +229,8 @@ export default function Page() {
         subtitle: subtitle || undefined,
       });
 
-      // 로컬 상태 동기화 업데이트
-      setLinkList((prevList) =>
-        prevList.map((link) =>
-          link.id === linkId
-            ? { ...link, title: editTitle.trim(), url: editUrl.trim(), subtitle: subtitle || undefined }
-            : link
-        )
-      );
+      // 변경사항이 있으므로 fetchLinks()를 재호출하여 최신 데이터를 가져옵니다.
+      await fetchLinks();
 
       setEditingLinkId(null);
       setEditTitle("");
@@ -245,6 +240,40 @@ export default function Page() {
       console.error("Firestore 링크 업데이트 중 에러 발생:", error);
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  // 삭제 확인 모달 열기 핸들러
+  const handleConfirmDelete = (linkId: string, title: string) => {
+    setDeleteLinkId(linkId);
+    setDeleteLinkTitle(title);
+  };
+
+  // 삭제 취소 핸들러
+  const handleCancelDelete = () => {
+    setDeleteLinkId(null);
+    setDeleteLinkTitle("");
+  };
+
+  // 삭제 실행 핸들러
+  const handleExecuteDelete = async () => {
+    if (!deleteLinkId) return;
+    setIsDeleting(true);
+
+    try {
+      const docRef = doc(db, "users", "anonymous", "links", deleteLinkId);
+      await deleteDoc(docRef);
+
+      // 변경사항이 있으므로 fetchLinks()를 재호출하여 최신 데이터를 가져옵니다.
+      await fetchLinks();
+
+      // 모달 상태 초기화
+      setDeleteLinkId(null);
+      setDeleteLinkTitle("");
+    } catch (error) {
+      console.error("Firestore 링크 삭제 중 에러 발생:", error);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -560,7 +589,7 @@ export default function Page() {
                       </a>
 
                       <div className="flex items-center gap-2">
-                        {/* 수정 버튼 (연필 이모티콘) */}
+                        {/* 수정 버튼 (연필 이모티콘 - 항상 표시) */}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -568,10 +597,24 @@ export default function Page() {
                             e.stopPropagation();
                             handleStartEdit(link);
                           }}
-                          className="p-2 rounded-xl bg-black/35 hover:bg-black/55 text-zinc-300 hover:text-white lg:opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-105 active:scale-[0.95] cursor-pointer border border-zinc-800/40"
+                          className="p-2 rounded-xl bg-black/35 hover:bg-black/55 text-zinc-300 hover:text-white transition-all duration-300 hover:scale-105 active:scale-[0.95] cursor-pointer border border-zinc-800/40"
                           title="수정"
                         >
                           <Pencil className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* 삭제 버튼 (휴지통 이모티콘 - 항상 표시) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleConfirmDelete(link.id, link.title);
+                          }}
+                          className="p-2 rounded-xl bg-black/35 hover:bg-red-950/40 hover:border-red-500/30 text-zinc-300 hover:text-red-400 transition-all duration-300 hover:scale-105 active:scale-[0.95] cursor-pointer border border-zinc-800/40"
+                          title="삭제"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                         
                         <a
@@ -701,6 +744,63 @@ export default function Page() {
         onAdd={handleAddLink}
         existingUrls={linkList.map((l) => l.url)}
       />
+
+      {/* Delete Confirmation Modal */}
+      {deleteLinkId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
+            onClick={handleCancelDelete}
+          />
+
+          {/* Modal Container */}
+          <div className="relative w-full max-w-md bg-[#13112b]/95 border border-zinc-800/80 rounded-2xl p-6 shadow-2xl z-10 flex flex-col animate-fade-in-down backdrop-blur-xl">
+            {/* Header */}
+            <div className="flex items-center gap-2 border-b border-zinc-800/60 pb-4 mb-4">
+              <span className="p-1.5 bg-red-500/20 text-red-400 rounded-lg">
+                <Trash2 className="w-5 h-5" />
+              </span>
+              <h2 className="text-lg font-bold text-white">
+                정말 삭제하시겠습니까?
+              </h2>
+            </div>
+
+            {/* Content */}
+            <div className="space-y-3 mb-6">
+              <p className="text-sm text-zinc-350 leading-relaxed">
+                삭제 대상 링크: <span className="font-bold text-white text-base">&ldquo;{deleteLinkTitle}&rdquo;</span>
+              </p>
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-400 font-semibold leading-normal">
+                  이 작업은 되돌릴 수 없습니다
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 text-sm font-semibold text-zinc-400 hover:text-zinc-200 bg-zinc-900/60 border border-zinc-800/80 rounded-xl hover:bg-zinc-900 transition-all cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteDelete}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-rose-600 rounded-xl hover:opacity-90 transition-all shadow-lg shadow-red-950/20 active:scale-[0.98] cursor-pointer"
+              >
+                {isDeleting ? "삭제 중..." : "삭제하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
