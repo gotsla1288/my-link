@@ -14,6 +14,7 @@ import {
   Check,
   AlertCircle
 } from "lucide-react"
+import { Card, CardContent } from "@/components/ui/card"
 
 // Custom SVG Icons to avoid Lucide compatibility issues
 const GithubIcon = ({ className }: { className?: string }) => (
@@ -28,6 +29,21 @@ const LinkedinIcon = ({ className }: { className?: string }) => (
     <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
     <rect width="4" height="12" x="2" y="9" />
     <circle cx="4" cy="4" r="2" />
+  </svg>
+)
+
+const InstagramIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+  </svg>
+)
+
+const YoutubeIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.33 29 29 0 0 0-.46-5.33z" />
+    <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02" />
   </svg>
 )
 
@@ -50,8 +66,9 @@ interface ProfileData {
     id: string
     title: string
     url: string
-    platform: "github" | "blog" | "linkedin" | "portfolio"
-    subtitle: string
+    platform: "github" | "blog" | "linkedin" | "portfolio" | "instagram" | "youtube"
+    subtitle?: string
+    description?: string
   }>
 }
 
@@ -484,7 +501,9 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                   github: "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 text-white",
                   blog: "bg-emerald-500/10 border-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/30 text-emerald-300",
                   linkedin: "bg-blue-500/10 border-blue-500/10 hover:bg-blue-500/15 hover:border-blue-500/30 text-blue-300",
-                  portfolio: "bg-purple-500/10 border-purple-500/10 hover:bg-purple-500/15 hover:border-purple-500/30 text-purple-300"
+                  portfolio: "bg-purple-500/10 border-purple-500/10 hover:bg-purple-500/15 hover:border-purple-500/30 text-purple-300",
+                  instagram: "bg-pink-500/10 border-pink-500/10 hover:bg-pink-500/15 hover:border-pink-500/30 text-pink-300",
+                  youtube: "bg-red-500/10 border-red-500/10 hover:bg-red-500/15 hover:border-red-500/30 text-red-300"
                 }
 
                 const platformIcons = {
