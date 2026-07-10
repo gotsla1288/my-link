@@ -510,7 +510,9 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                   github: <GithubIcon className="w-5 h-5" />,
                   blog: <BookOpen className="w-5 h-5" />,
                   linkedin: <LinkedinIcon className="w-5 h-5" />,
-                  portfolio: <Briefcase className="w-5 h-5" />
+                  portfolio: <Briefcase className="w-5 h-5" />,
+                  instagram: <InstagramIcon className="w-5 h-5" />,
+                  youtube: <YoutubeIcon className="w-5 h-5" />
                 }
 
                 return (

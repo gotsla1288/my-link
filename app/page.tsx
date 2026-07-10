@@ -3,14 +3,16 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { links } from "@/data/links";
+import { links, Link as LinkType } from "@/data/links";
 import {
   BookOpen,
   Briefcase,
   ChevronRight,
   ExternalLink,
   AlertCircle,
+  Plus,
 } from "lucide-react";
+import LinkAddDialog from "@/components/LinkAddDialog";
 
 // Custom SVG Icons to avoid Lucide compatibility issues and match the premium theme
 const GithubIcon = ({ className }: { className?: string }) => (
@@ -72,6 +74,38 @@ export default function Page() {
   const [waveCompleted, setWaveCompleted] = useState(false);
   const [rippleEffect, setRippleEffect] = useState(false);
 
+  const [linkList, setLinkList] = useState<LinkType[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    const storedLinks = localStorage.getItem("mylinks_hyerim");
+    if (storedLinks) {
+      try {
+        setLinkList(JSON.parse(storedLinks));
+      } catch (e) {
+        setLinkList(links);
+      }
+    } else {
+      setLinkList(links);
+      localStorage.setItem("mylinks_hyerim", JSON.stringify(links));
+    }
+  }, []);
+
+  const handleAddLink = (newLinkData: Omit<LinkType, "id" | "order" | "clickCount">) => {
+    const maxOrder = linkList.length > 0 ? Math.max(...linkList.map((l) => l.order)) : -1;
+    const newLink: LinkType = {
+      ...newLinkData,
+      id: `link-${Date.now()}`,
+      order: maxOrder + 1,
+      clickCount: 0,
+    };
+    const updatedList = [...linkList, newLink];
+    setLinkList(updatedList);
+    localStorage.setItem("mylinks_hyerim", JSON.stringify(updatedList));
+  };
+
   // Wave Action
   const handleSendWave = () => {
     setWaveAnimating(true);
@@ -95,7 +129,7 @@ export default function Page() {
     }, 400);
   };
 
-  const activeLinks = links
+  const activeLinks = (isMounted ? linkList : links)
     .filter((link) => link.isActive)
     .sort((a, b) => a.order - b.order);
 
@@ -269,6 +303,15 @@ export default function Page() {
                   </a>
                 );
               })}
+
+              {/* Add Link Trigger Button */}
+              <button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="w-full group flex items-center justify-center p-4 rounded-2xl border border-dashed border-zinc-700/60 bg-zinc-900/10 hover:bg-zinc-900/30 hover:border-violet-500/50 hover:text-violet-300 text-zinc-400 font-semibold text-sm tracking-wider backdrop-blur-md transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] cursor-pointer gap-2 py-4.5"
+              >
+                <Plus className="w-5 h-5" />
+                <span>새 링크 추가하기</span>
+              </button>
             </div>
 
             {/* WaveWidget */}
@@ -365,6 +408,14 @@ export default function Page() {
           </div>
         </div>
       </footer>
+
+      {/* Add Link Dialog */}
+      <LinkAddDialog
+        isOpen={isAddDialogOpen}
+        onClose={() => setIsAddDialogOpen(false)}
+        onAdd={handleAddLink}
+        existingUrls={linkList.map((l) => l.url)}
+      />
     </div>
   );
 }
