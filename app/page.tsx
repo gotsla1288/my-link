@@ -71,13 +71,7 @@ const YoutubeIcon = ({ className }: { className?: string }) => (
 
 export default function Page() {
   // States
-  const [wavesReceived, setWavesReceived] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      const storedWaves = localStorage.getItem("waves_hyerim");
-      return storedWaves ? parseInt(storedWaves) : 42;
-    }
-    return 42;
-  });
+  const [wavesReceived, setWavesReceived] = useState<number>(42);
   const [waveAnimating, setWaveAnimating] = useState(false);
   const [waveCompleted, setWaveCompleted] = useState(false);
   const [rippleEffect, setRippleEffect] = useState(false);
@@ -172,6 +166,7 @@ export default function Page() {
               bio: data.bio || "나만의 링크 공간입니다. ✨",
               avatarUrl: data.avatarUrl || currentUser.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80",
             });
+            setWavesReceived(data.waves || 42);
           } else {
             // 유저 정보 문서가 없으면 최초 Google 정보를 기반으로 자동 Seed 생성
             const initialProfile = {
@@ -180,6 +175,7 @@ export default function Page() {
               bio: "나만의 링크 공간입니다. ✨",
               avatarUrl: currentUser.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80",
               createdAt: new Date().toISOString(),
+              waves: 42,
             };
             await setDoc(userDocRef, initialProfile);
             setProfileInfo({
@@ -187,6 +183,7 @@ export default function Page() {
               bio: initialProfile.bio,
               avatarUrl: initialProfile.avatarUrl,
             });
+            setWavesReceived(42);
           }
           
           // 링크 데이터 조회
@@ -353,14 +350,23 @@ export default function Page() {
   };
 
   // Wave Action
-  const handleSendWave = () => {
+  const handleSendWave = async () => {
+    if (!user) return;
     setWaveAnimating(true);
     setRippleEffect(true);
     setWaveCompleted(true);
 
     const newWaves = wavesReceived + 1;
     setWavesReceived(newWaves);
-    localStorage.setItem("waves_hyerim", String(newWaves));
+
+    try {
+      const userDocRef = doc(db, "users", user.uid);
+      await updateDoc(userDocRef, {
+        waves: newWaves,
+      });
+    } catch (error) {
+      console.error("대시보드 파도 수 업데이트 중 에러 발생:", error);
+    }
 
     setTimeout(() => {
       setWaveCompleted(false);

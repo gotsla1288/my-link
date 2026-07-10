@@ -9,12 +9,14 @@ import {
   ChevronRight, 
   ExternalLink,
   Lock,
-  ArrowRight,
   Eye,
   Check,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+import { db, auth, googleProvider } from "@/lib/firebase"
+import { collection, getDocs, query, where, limit, doc, updateDoc, getDoc, orderBy } from "firebase/firestore"
+import { signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth"
 
 // Custom SVG Icons to avoid Lucide compatibility issues
 const GithubIcon = ({ className }: { className?: string }) => (
@@ -69,6 +71,8 @@ interface ProfileData {
     platform: "github" | "blog" | "linkedin" | "portfolio" | "instagram" | "youtube"
     subtitle?: string
     description?: string
+    isActive: boolean
+    createdAt?: string
   }>
 }
 
@@ -82,12 +86,15 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
       ? rawUsername.substring(1) 
       : rawUsername
 
-  const isHyerim = displayName.toLowerCase() === "hyerim"
-
   // States
   const [loading, setLoading] = useState(true)
   const [isOwner, setIsOwner] = useState(false)
   const [profile, setProfile] = useState<ProfileData | null>(null)
+  const [profileOwnerUid, setProfileOwnerUid] = useState<string | null>(null)
+
+  // Auth States
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   
   // Wave state
   const [wavesReceived, setWavesReceived] = useState(42)
@@ -100,65 +107,117 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
   const [editUsernameVal, setEditUsernameVal] = useState("")
   const [editBioVal, setEditBioVal] = useState("")
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
-  // Initialize Data
-  useEffect(() => {
-    // 1초간 Skeleton UI 표시
-    const timer = setTimeout(() => {
-      if (isHyerim) {
-        // 로컬스토리지에서 기존 프로필 값이나 파도 수를 가져옴
-        const storedProfile = localStorage.getItem("profile_hyerim")
-        const storedWaves = localStorage.getItem("waves_hyerim")
+  // Firestore에서 프로필 유저 정보 및 링크 패치
+  const fetchProfileAndLinks = async (targetDisplayName: string) => {
+    setLoading(true)
+    try {
+      const usersRef = collection(db, "users")
+      const q = query(usersRef, where("displayName", "==", targetDisplayName), limit(1))
+      const querySnapshot = await getDocs(q)
+      
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0]
+        const userData = userDoc.data()
+        const uid = userDoc.id
+        setProfileOwnerUid(uid)
         
-        const defaultProfile: ProfileData = {
-          username: "전혜림",
-          displayName: "hyerim",
-          bio: "사용하기 명쾌하고 미학적으로 완성도 높은 인터랙션을 설계합니다 ✨",
-          avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80", // 아름다운 예시 인물 사진
-          isOnline: true,
-          waves: storedWaves ? parseInt(storedWaves) : 42,
-          links: [
-            { id: "1", title: "GitHub", url: "https://github.com", platform: "github", subtitle: "github.com/hyerim" },
-            { id: "2", title: "기술 블로그", url: "https://velog.io", platform: "blog", subtitle: "velog.io/@hyerim" },
-            { id: "3", title: "LinkedIn", url: "https://linkedin.com", platform: "linkedin", subtitle: "linkedin.com/in/hyerim" },
-            { id: "4", title: "포트폴리오", url: "https://github.com", platform: "portfolio", subtitle: "hyerim.dev" },
-          ]
-        }
+        // 파도 개수 설정
+        const currentWaves = userData.waves || 42
+        setWavesReceived(currentWaves)
 
-        if (storedProfile) {
-          try {
-            const parsed = JSON.parse(storedProfile)
-            setProfile({ ...defaultProfile, ...parsed, waves: storedWaves ? parseInt(storedWaves) : parsed.waves })
-            setWavesReceived(storedWaves ? parseInt(storedWaves) : parsed.waves)
-          } catch (e) {
-            setProfile(defaultProfile)
-            setWavesReceived(defaultProfile.waves)
+        // 하위 링크 목록 패치
+        const linksRef = collection(db, "users", uid, "links")
+        const linksQuery = query(linksRef, orderBy("createdAt", "desc"))
+        const linksSnap = await getDocs(linksQuery)
+        const fetchedLinks: ProfileData["links"] = []
+        
+        linksSnap.forEach((doc) => {
+          const data = doc.data()
+          // 활성화된 링크만 수집
+          if (data.isActive !== false) {
+            fetchedLinks.push({
+              id: doc.id,
+              title: data.title || "",
+              url: data.url || "",
+              platform: data.platform || "portfolio",
+              subtitle: data.subtitle || "",
+              description: data.description || "",
+              isActive: data.isActive !== false,
+              createdAt: data.createdAt || ""
+            })
           }
-        } else {
-          setProfile(defaultProfile)
-          setWavesReceived(defaultProfile.waves)
-        }
+        })
+
+        setProfile({
+          username: userData.username || userData.displayName || "무명 유저",
+          displayName: userData.displayName || targetDisplayName,
+          bio: userData.bio || "나만의 링크 공간입니다. ✨",
+          avatarUrl: userData.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80",
+          isOnline: true,
+          waves: currentWaves,
+          links: fetchedLinks
+        })
+      } else {
+        setProfile(null)
       }
+    } catch (error) {
+      console.error("공개 프로필 로드 중 에러 발생:", error)
+      setProfile(null)
+    } finally {
       setLoading(false)
-    }, 1000)
+    }
+  }
 
-    return () => clearTimeout(timer)
-  }, [isHyerim])
+  // Initialize Data & Auth Observer
+  useEffect(() => {
+    // 1. 프로필 정보 쿼리 실행
+    fetchProfileAndLinks(displayName)
 
-  // Save to LocalStorage helper
-  const saveProfileData = (updated: Partial<ProfileData>) => {
-    if (!profile) return
-    const newProfile = { ...profile, ...updated }
-    setProfile(newProfile)
-    localStorage.setItem("profile_hyerim", JSON.stringify(newProfile))
+    // 2. Firebase Auth 감지 구독
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user)
+      setAuthLoading(false)
+    })
+
+    return () => unsubscribe()
+  }, [displayName])
+
+  // 소유자 여부 자동 매핑 Effect
+  useEffect(() => {
+    if (currentUser && profileOwnerUid) {
+      setIsOwner(currentUser.uid === profileOwnerUid)
+    } else {
+      setIsOwner(false)
+    }
+  }, [currentUser, profileOwnerUid])
+
+  // Save to Firestore helper
+  const saveProfileData = async (updated: Partial<ProfileData>) => {
+    if (!profileOwnerUid || !profile) return
+    setIsSaving(true)
+    try {
+      const userDocRef = doc(db, "users", profileOwnerUid)
+      await updateDoc(userDocRef, updated)
+      
+      const newProfile = { ...profile, ...updated }
+      setProfile(newProfile)
+    } catch (error) {
+      console.error("Firestore 프로필 수정 중 오류 발생:", error)
+      showToast("변경 사항을 저장하지 못했습니다.")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Wave Action
-  const handleSendWave = () => {
+  const handleSendWave = async () => {
     if (isOwner) {
       showToast("소유자는 본인 페이지에 파도를 보낼 수 없습니다.")
       return
     }
+    if (!profileOwnerUid) return
     
     // 카운터 애니메이션 트리거
     setWaveAnimating(true)
@@ -167,7 +226,16 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
     
     const newWaves = wavesReceived + 1
     setWavesReceived(newWaves)
-    localStorage.setItem("waves_hyerim", String(newWaves))
+
+    try {
+      // 파도 데이터를 DB에 누적 기록합니다.
+      const userDocRef = doc(db, "users", profileOwnerUid)
+      await updateDoc(userDocRef, {
+        waves: newWaves
+      })
+    } catch (error) {
+      console.error("Firestore 파도 갱신 중 오류 발생:", error)
+    }
 
     // 600ms 뒤 완료 상태 원복
     setTimeout(() => {
@@ -197,7 +265,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
     setEditingField(null)
   }
 
-  const saveEdit = (field: "username" | "bio") => {
+  const saveEdit = async (field: "username" | "bio") => {
     if (!profile) return
     if (field === "username") {
       if (!editUsernameVal.trim()) {
@@ -208,22 +276,22 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
         showToast("이름은 최대 30자까지 입력 가능합니다.")
         return
       }
-      saveProfileData({ username: editUsernameVal })
+      await saveProfileData({ username: editUsernameVal.trim() })
       showToast("이름이 성공적으로 저장되었습니다.")
     } else if (field === "bio") {
       if (editBioVal.length > 150) {
         showToast("한 줄 소개는 최대 150자까지 입력 가능합니다.")
         return
       }
-      saveProfileData({ bio: editBioVal })
+      await saveProfileData({ bio: editBioVal.trim() })
       showToast("소개가 성공적으로 저장되었습니다.")
     }
     setEditingField(null)
   }
 
-  const handleAvatarChange = () => {
+  const handleAvatarChange = async () => {
     if (!profile) return
-    // 아바타 랜덤 변경 모사
+    // 아바타 랜덤 변경 모사 및 DB 동기화
     const randomAvatars = [
       "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=300&fit=crop&q=80",
       "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&fit=crop&q=80",
@@ -235,8 +303,26 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
     if (nextIdx === currentIdx) {
       nextIdx = (nextIdx + 1) % randomAvatars.length
     }
-    saveProfileData({ avatarUrl: randomAvatars[nextIdx] })
+    await saveProfileData({ avatarUrl: randomAvatars[nextIdx] })
     showToast("프로필 이미지가 변경되었습니다.")
+  }
+
+  // 구글 소셜 로그인
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider)
+    } catch (error) {
+      console.error("구글 로그인 실패:", error)
+    }
+  }
+
+  // 로그아웃
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+    } catch (error) {
+      console.error("로그아웃 실패:", error)
+    }
   }
 
   const showToast = (msg: string) => {
@@ -271,7 +357,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
   }
 
   // 2. 404 User Not Found Screen
-  if (!isHyerim) {
+  if (!profile) {
     return (
       <div className="min-h-screen bg-[#0d0a1e] flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl" />
@@ -308,9 +394,56 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
       <div className="absolute top-20 left-10 w-96 h-96 bg-indigo-600/15 rounded-full blur-[100px] pointer-events-none animate-pulse duration-[6000ms]" />
       <div className="absolute bottom-20 right-10 w-[450px] h-[450px] bg-purple-600/15 rounded-full blur-[120px] pointer-events-none animate-pulse duration-[8000ms]" />
 
+      {/* Header GNB */}
+      <header className="w-full bg-[#0d0a1e]/60 backdrop-blur-md border-b border-zinc-800/40 sticky top-0 z-40 transition-all duration-300">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 group">
+            <span className="p-1.5 bg-gradient-to-tr from-violet-600 to-indigo-600 rounded-lg text-white font-black text-xs sm:text-sm tracking-wider shadow-md group-hover:scale-105 transition-all">
+              ✦ ML
+            </span>
+            <span className="font-extrabold text-xs sm:text-sm tracking-widest text-zinc-100 uppercase hidden sm:inline-block">
+              MyLink Profile
+            </span>
+          </Link>
+
+          <div className="flex items-center gap-3">
+            {!authLoading && (
+              <>
+                {currentUser ? (
+                  <div className="flex items-center gap-2.5 sm:gap-3 bg-zinc-900/40 border border-zinc-800/80 rounded-full py-1 pl-1.5 pr-3">
+                    <img
+                      src={currentUser.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80"}
+                      alt={currentUser.displayName || "User"}
+                      className="w-7 h-7 rounded-full border border-zinc-850 object-cover"
+                    />
+                    <span className="text-[11px] sm:text-xs font-semibold text-zinc-200 hidden sm:inline">
+                      {currentUser.displayName}
+                    </span>
+                    <span className="text-zinc-700 sm:inline hidden">|</span>
+                    <button
+                      onClick={handleLogout}
+                      className="text-[11px] sm:text-xs font-bold text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      로그아웃
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleLogin}
+                    className="px-4 py-2 bg-gradient-to-tr from-violet-600 to-indigo-600 hover:opacity-95 rounded-full text-[11px] sm:text-xs font-bold text-white shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>Google 로그인</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
       {/* Top Banner for Owner Mode */}
       {isOwner && (
-        <div className="sticky top-0 z-50 w-full bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 py-3.5 px-4 flex items-center justify-between text-xs sm:text-sm animate-fade-in-down">
+        <div className="w-full bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 py-3.5 px-4 flex items-center justify-between text-xs sm:text-sm animate-fade-in-down relative z-10">
           <div className="flex items-center gap-2 font-medium text-indigo-400">
             <Lock className="w-4 h-4" />
             <span>✏️ 내 페이지 편집 중</span>
@@ -333,12 +466,12 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
         </div>
       )}
 
-      {/* Floating Switch Role Button (for Demo purposes) */}
-      {!isOwner && (
-        <div className="fixed top-4 right-4 z-40">
+      {/* Floating Switch Role Button (Trigger actual Google login) */}
+      {!isOwner && !currentUser && (
+        <div className="fixed top-20 right-4 z-45">
           <button
-            onClick={() => setIsOwner(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/30 text-indigo-300 text-xs font-semibold shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer"
+            onClick={handleLogin}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/30 text-indigo-300 text-xs font-semibold shadow-lg backdrop-blur-sm transition-all active:scale-95 cursor-pointer hover:scale-105"
           >
             <Lock className="w-3.5 h-3.5" />
             <span>소유자 권한 로그인</span>
@@ -353,7 +486,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 lg:gap-14 items-start">
           
           {/* LEFT COLUMN: ProfileSidebar */}
-          <aside className="lg:sticky lg:top-16 flex flex-col items-center lg:items-start text-center lg:text-left space-y-6">
+          <aside className="lg:sticky lg:top-24 flex flex-col items-center lg:items-start text-center lg:text-left space-y-6">
             
             {/* Avatar Section */}
             <div className="relative group">
@@ -376,7 +509,8 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
               {isOwner && (
                 <button
                   onClick={handleAvatarChange}
-                  className="absolute bottom-0 right-7 bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-full border-2 border-zinc-950 cursor-pointer shadow-xl transition-all active:scale-90"
+                  disabled={isSaving}
+                  className="absolute bottom-0 right-7 bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-full border-2 border-zinc-950 cursor-pointer shadow-xl transition-all active:scale-90 disabled:opacity-50"
                   title="프로필 이미지 변경"
                 >
                   <Camera className="w-4 h-4" />
@@ -394,12 +528,15 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                     value={editUsernameVal}
                     onChange={(e) => setEditUsernameVal(e.target.value)}
                     maxLength={30}
-                    className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-indigo-500 text-sm font-bold text-center lg:text-left"
+                    disabled={isSaving}
+                    className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-indigo-500 text-sm font-bold text-center lg:text-left disabled:opacity-50"
                     placeholder="유저네임 입력"
                   />
                   <div className="flex justify-end gap-1.5 text-xs">
-                    <button onClick={cancelEdit} className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700">취소</button>
-                    <button onClick={() => saveEdit("username")} className="px-2.5 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-500">저장</button>
+                    <button onClick={cancelEdit} disabled={isSaving} className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50">취소</button>
+                    <button onClick={() => saveEdit("username")} disabled={isSaving} className="px-2.5 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">
+                      {isSaving ? "저장 중..." : "저장"}
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -431,14 +568,17 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                     value={editBioVal}
                     onChange={(e) => setEditBioVal(e.target.value)}
                     maxLength={150}
-                    className="w-full h-24 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs outline-none focus:border-indigo-500 resize-none leading-relaxed"
+                    disabled={isSaving}
+                    className="w-full h-24 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs outline-none focus:border-indigo-500 resize-none leading-relaxed disabled:opacity-50"
                     placeholder="소개글을 작성해보세요 (최대 150자)"
                   />
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-[10px] text-zinc-500">{editBioVal.length} / 150자</span>
                     <div className="flex gap-1.5">
-                      <button onClick={cancelEdit} className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700">취소</button>
-                      <button onClick={() => saveEdit("bio")} className="px-2.5 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-500">저장</button>
+                      <button onClick={cancelEdit} disabled={isSaving} className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-50">취소</button>
+                      <button onClick={() => saveEdit("bio")} disabled={isSaving} className="px-2.5 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">
+                        {isSaving ? "저장 중..." : "저장"}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -491,55 +631,63 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
           </aside>
 
           {/* RIGHT COLUMN: ContentPanel */}
-          <main className="space-y-6 lg:pb-12">
+          <main className="space-y-6 lg:pb-12 w-full">
             
             {/* Link List */}
             <div className="space-y-4">
-              {profile?.links.map((link, idx) => {
-                // 플랫폼별 유리 틴트 스타일링
-                const tintStyles = {
-                  github: "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 text-white",
-                  blog: "bg-emerald-500/10 border-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/30 text-emerald-300",
-                  linkedin: "bg-blue-500/10 border-blue-500/10 hover:bg-blue-500/15 hover:border-blue-500/30 text-blue-300",
-                  portfolio: "bg-purple-500/10 border-purple-500/10 hover:bg-purple-500/15 hover:border-purple-500/30 text-purple-300",
-                  instagram: "bg-pink-500/10 border-pink-500/10 hover:bg-pink-500/15 hover:border-pink-500/30 text-pink-300",
-                  youtube: "bg-red-500/10 border-red-500/10 hover:bg-red-500/15 hover:border-red-500/30 text-red-300"
-                }
+              {profile?.links.length === 0 ? (
+                <div className="text-center py-10 text-zinc-500 text-xs border border-dashed border-zinc-850 rounded-2xl">
+                  아직 등록된 공개 링크가 없습니다.
+                </div>
+              ) : (
+                profile?.links.map((link, idx) => {
+                  // 플랫폼별 유리 틴트 스타일링
+                  const tintStyles = {
+                    github: "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 text-white",
+                    blog: "bg-emerald-500/10 border-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/30 text-emerald-300",
+                    linkedin: "bg-blue-500/10 border-blue-500/10 hover:bg-blue-500/15 hover:border-blue-500/30 text-blue-300",
+                    portfolio: "bg-purple-500/10 border-purple-500/10 hover:bg-purple-500/15 hover:border-purple-500/30 text-purple-300",
+                    instagram: "bg-pink-500/10 border-pink-500/10 hover:bg-pink-500/15 hover:border-pink-500/30 text-pink-300",
+                    youtube: "bg-red-500/10 border-red-500/10 hover:bg-red-500/15 hover:border-red-500/30 text-red-300"
+                  }
 
-                const platformIcons = {
-                  github: <GithubIcon className="w-5 h-5" />,
-                  blog: <BookOpen className="w-5 h-5" />,
-                  linkedin: <LinkedinIcon className="w-5 h-5" />,
-                  portfolio: <Briefcase className="w-5 h-5" />,
-                  instagram: <InstagramIcon className="w-5 h-5" />,
-                  youtube: <YoutubeIcon className="w-5 h-5" />
-                }
+                  const platformIcons = {
+                    github: <GithubIcon className="w-5 h-5" />,
+                    blog: <BookOpen className="w-5 h-5" />,
+                    linkedin: <LinkedinIcon className="w-5 h-5" />,
+                    portfolio: <Briefcase className="w-5 h-5" />,
+                    instagram: <InstagramIcon className="w-5 h-5" />,
+                    youtube: <YoutubeIcon className="w-5 h-5" />
+                  }
 
-                return (
-                  <a
-                    key={link.id}
-                    href={link.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={`group flex items-center justify-between p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 ${tintStyles[link.platform]}`}
-                    style={{
-                      animationDelay: `${idx * 70}ms`,
-                      animationFillMode: "both"
-                    }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-black/30 rounded-xl">
-                        {platformIcons[link.platform]}
+                  return (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`group flex items-center justify-between p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 ${tintStyles[link.platform]}`}
+                      style={{
+                        animationDelay: `${idx * 70}ms`,
+                        animationFillMode: "both"
+                      }}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 bg-black/30 rounded-xl">
+                          {platformIcons[link.platform]}
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-zinc-100 group-hover:text-white tracking-wide">{link.title}</div>
+                          {link.subtitle && (
+                            <div className="text-[11px] opacity-45 font-mono mt-0.5">{link.subtitle}</div>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <div className="text-sm font-bold text-zinc-100 group-hover:text-white tracking-wide">{link.title}</div>
-                        <div className="text-[11px] opacity-45 font-mono mt-0.5">{link.subtitle}</div>
-                      </div>
-                    </div>
-                    <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
-                  </a>
-                )
-              })}
+                      <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
+                    </a>
+                  )
+                })
+              )}
 
               {/* Add shortcut Link for Owner */}
               {isOwner && (
