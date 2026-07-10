@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { links, Link as LinkType } from "@/data/links";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, getDocs, query, orderBy } from "firebase/firestore";
 import {
   BookOpen,
   Briefcase,
@@ -77,33 +79,75 @@ export default function Page() {
   const [linkList, setLinkList] = useState<LinkType[]>([]);
   const [isMounted, setIsMounted] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Firestore로부터 링크 데이터 로드 함수
+  const fetchLinks = async () => {
+    setIsLoading(true);
+    try {
+      const q = query(collection(db, "users", "anonymous", "links"), orderBy("order", "asc"));
+      const querySnapshot = await getDocs(q);
+      const fetchedLinks: LinkType[] = [];
+      querySnapshot.forEach((doc) => {
+        fetchedLinks.push({
+          id: doc.id,
+          ...doc.data(),
+        } as LinkType);
+      });
+
+      // 만약 Firestore에 데이터가 없는 경우, 기본 링크 데이터 삽입 (Seed)
+      if (fetchedLinks.length === 0) {
+        const seedPromises = links.map((link) => {
+          const { id, ...dataWithoutId } = link;
+          return addDoc(collection(db, "users", "anonymous", "links"), dataWithoutId);
+        });
+        await Promise.all(seedPromises);
+        
+        // 다시 조회
+        const reQuerySnapshot = await getDocs(q);
+        const reFetchedLinks: LinkType[] = [];
+        reQuerySnapshot.forEach((doc) => {
+          reFetchedLinks.push({
+            id: doc.id,
+            ...doc.data(),
+          } as LinkType);
+        });
+        setLinkList(reFetchedLinks);
+      } else {
+        setLinkList(fetchedLinks);
+      }
+    } catch (error) {
+      console.error("Firestore에서 링크 데이터를 가져오는 중 에러 발생:", error);
+      // 에러 발생 시 fallback으로 기본 데이터 세팅
+      setLinkList(links);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     setIsMounted(true);
-    const storedLinks = localStorage.getItem("mylinks_hyerim");
-    if (storedLinks) {
-      try {
-        setLinkList(JSON.parse(storedLinks));
-      } catch (e) {
-        setLinkList(links);
-      }
-    } else {
-      setLinkList(links);
-      localStorage.setItem("mylinks_hyerim", JSON.stringify(links));
-    }
+    fetchLinks();
   }, []);
 
-  const handleAddLink = (newLinkData: Omit<LinkType, "id" | "order" | "clickCount">) => {
+  const handleAddLink = async (newLinkData: Omit<LinkType, "id" | "order" | "clickCount">) => {
     const maxOrder = linkList.length > 0 ? Math.max(...linkList.map((l) => l.order)) : -1;
-    const newLink: LinkType = {
+    const order = maxOrder + 1;
+    
+    const newFirestoreLink = {
       ...newLinkData,
-      id: `link-${Date.now()}`,
-      order: maxOrder + 1,
+      order,
       clickCount: 0,
+      createdAt: new Date().toISOString(),
     };
-    const updatedList = [...linkList, newLink];
-    setLinkList(updatedList);
-    localStorage.setItem("mylinks_hyerim", JSON.stringify(updatedList));
+
+    try {
+      await addDoc(collection(db, "users", "anonymous", "links"), newFirestoreLink);
+      // 저장 성공 후 리스트 갱신
+      await fetchLinks();
+    } catch (error) {
+      console.error("Firestore에 링크를 추가하는 중 에러 발생:", error);
+    }
   };
 
   // Wave Action
@@ -129,7 +173,7 @@ export default function Page() {
     }, 400);
   };
 
-  const activeLinks = (isMounted ? linkList : links)
+  const activeLinks = linkList
     .filter((link) => link.isActive)
     .sort((a, b) => a.order - b.order);
 
@@ -226,83 +270,104 @@ export default function Page() {
           <main className="space-y-6 lg:pb-12">
             {/* Link List */}
             <div className="space-y-4">
-              {activeLinks.map((link, idx) => {
-                const tintStyles = {
-                  github:
-                    "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 text-white",
-                  blog:
-                    "bg-emerald-500/10 border-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/30 text-emerald-300",
-                  portfolio:
-                    "bg-purple-500/10 border-purple-500/10 hover:bg-purple-500/15 hover:border-purple-500/30 text-purple-300",
-                  instagram:
-                    "bg-pink-500/10 border-pink-500/10 hover:bg-pink-500/15 hover:border-pink-500/30 text-pink-300",
-                  youtube:
-                    "bg-red-500/10 border-red-500/10 hover:bg-red-500/15 hover:border-red-500/30 text-red-300",
-                  linkedin:
-                    "bg-blue-500/10 border-blue-500/10 hover:bg-blue-500/15 hover:border-blue-500/30 text-blue-300",
-                };
-
-                const platformIcons = {
-                  github: <GithubIcon className="w-5 h-5" />,
-                  blog: <BookOpen className="w-5 h-5" />,
-                  portfolio: <Briefcase className="w-5 h-5" />,
-                  instagram: <InstagramIcon className="w-5 h-5" />,
-                  youtube: <YoutubeIcon className="w-5 h-5" />,
-                  linkedin: (
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="w-5 h-5"
+              {isLoading || !isMounted ? (
+                // Premium glassmorphism loading skeleton
+                <div className="space-y-4 animate-pulse">
+                  {[1, 2, 3].map((n) => (
+                    <div
+                      key={n}
+                      className="flex items-center justify-between p-4.5 rounded-2xl border border-zinc-800/40 bg-white/5 backdrop-blur-md"
                     >
-                      <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-                      <rect width="4" height="12" x="2" y="9" />
-                      <circle cx="4" cy="4" r="2" />
-                    </svg>
-                  ),
-                };
-
-                const platform = link.platform || "portfolio";
-
-                return (
-                  <a
-                    key={link.id}
-                    href={link.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={`group flex items-center justify-between p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 ${tintStyles[platform]}`}
-                    style={{
-                      animationDelay: `${idx * 70}ms`,
-                      animationFillMode: "both",
-                    }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-black/30 rounded-xl">
-                        {platformIcons[platform]}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-zinc-100 group-hover:text-white tracking-wide">
-                          {link.title}
+                      <div className="flex items-center gap-4">
+                        <div className="w-11 h-11 bg-zinc-800/80 rounded-xl shrink-0" />
+                        <div className="space-y-2">
+                          <div className="h-4 w-32 bg-zinc-800/80 rounded" />
+                          <div className="h-3 w-48 bg-zinc-800/60 rounded" />
                         </div>
-                        {link.description && (
-                          <div className="text-xs text-zinc-400 mt-1">
-                            {link.description}
-                          </div>
-                        )}
-                        {link.subtitle && (
-                          <div className="text-[10px] opacity-45 font-mono mt-0.5">
-                            {link.subtitle}
-                          </div>
-                        )}
                       </div>
+                      <div className="w-4 h-4 bg-zinc-800/40 rounded" />
                     </div>
-                    <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
-                  </a>
-                );
-              })}
+                  ))}
+                </div>
+              ) : (
+                activeLinks.map((link, idx) => {
+                  const tintStyles = {
+                    github:
+                      "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 text-white",
+                    blog:
+                      "bg-emerald-500/10 border-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/30 text-emerald-300",
+                    portfolio:
+                      "bg-purple-500/10 border-purple-500/10 hover:bg-purple-500/15 hover:border-purple-500/30 text-purple-300",
+                    instagram:
+                      "bg-pink-500/10 border-pink-500/10 hover:bg-pink-500/15 hover:border-pink-500/30 text-pink-300",
+                    youtube:
+                      "bg-red-500/10 border-red-500/10 hover:bg-red-500/15 hover:border-red-500/30 text-red-300",
+                    linkedin:
+                      "bg-blue-500/10 border-blue-500/10 hover:bg-blue-500/15 hover:border-blue-500/30 text-blue-300",
+                  };
+
+                  const platformIcons = {
+                    github: <GithubIcon className="w-5 h-5" />,
+                    blog: <BookOpen className="w-5 h-5" />,
+                    portfolio: <Briefcase className="w-5 h-5" />,
+                    instagram: <InstagramIcon className="w-5 h-5" />,
+                    youtube: <YoutubeIcon className="w-5 h-5" />,
+                    linkedin: (
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="w-5 h-5"
+                      >
+                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+                        <rect width="4" height="12" x="2" y="9" />
+                        <circle cx="4" cy="4" r="2" />
+                      </svg>
+                    ),
+                  };
+
+                  const platform = link.platform || "portfolio";
+
+                  return (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`group flex items-center justify-between p-4.5 rounded-2xl border backdrop-blur-md shadow-lg transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 ${tintStyles[platform]}`}
+                      style={{
+                        animationDelay: `${idx * 70}ms`,
+                        animationFillMode: "both",
+                      }}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 bg-black/30 rounded-xl">
+                          {platformIcons[platform]}
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-zinc-100 group-hover:text-white tracking-wide">
+                            {link.title}
+                          </div>
+                          {link.description && (
+                            <div className="text-xs text-zinc-400 mt-1">
+                              {link.description}
+                            </div>
+                          )}
+                          {link.subtitle && (
+                            <div className="text-[10px] opacity-45 font-mono mt-0.5">
+                              {link.subtitle}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
+                    </a>
+                  );
+                })
+              )}
 
               {/* Add Link Trigger Button */}
               <button
