@@ -9,6 +9,7 @@ export interface Link {
   clickCount: number; // 링크 총 클릭 수 (F-08)
   subtitle?: string; // 링크 카드 하단에 표시되는 부제목 (선택)
   platform?: "github" | "blog" | "linkedin" | "portfolio" | "instagram" | "youtube"; // 플랫폼 구분 (선택)
+  createdAt?: string; // 생성일시 (선택)
 }
 
 export const links: Link[] = [

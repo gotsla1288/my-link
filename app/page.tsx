@@ -85,7 +85,7 @@ export default function Page() {
   const fetchLinks = async () => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, "users", "anonymous", "links"), orderBy("order", "asc"));
+      const q = query(collection(db, "users", "anonymous", "links"), orderBy("createdAt", "desc"));
       const querySnapshot = await getDocs(q);
       const fetchedLinks: LinkType[] = [];
       querySnapshot.forEach((doc) => {
@@ -97,9 +97,15 @@ export default function Page() {
 
       // 만약 Firestore에 데이터가 없는 경우, 기본 링크 데이터 삽입 (Seed)
       if (fetchedLinks.length === 0) {
-        const seedPromises = links.map((link) => {
+        const seedPromises = links.map((link, idx) => {
           const { id, ...dataWithoutId } = link;
-          return addDoc(collection(db, "users", "anonymous", "links"), dataWithoutId);
+          // 인스턴스 정렬 순서 유지를 위해 시간차 적용 (idx가 작을수록 더 최신 시간)
+          const seedDate = new Date();
+          seedDate.setSeconds(seedDate.getSeconds() - idx * 10);
+          return addDoc(collection(db, "users", "anonymous", "links"), {
+            ...dataWithoutId,
+            createdAt: seedDate.toISOString(),
+          });
         });
         await Promise.all(seedPromises);
         
@@ -133,18 +139,24 @@ export default function Page() {
   const handleAddLink = async (newLinkData: Omit<LinkType, "id" | "order" | "clickCount">) => {
     const maxOrder = linkList.length > 0 ? Math.max(...linkList.map((l) => l.order)) : -1;
     const order = maxOrder + 1;
+    const createdAt = new Date().toISOString();
     
     const newFirestoreLink = {
       ...newLinkData,
       order,
       clickCount: 0,
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
 
     try {
-      await addDoc(collection(db, "users", "anonymous", "links"), newFirestoreLink);
-      // 저장 성공 후 리스트 갱신
-      await fetchLinks();
+      const docRef = await addDoc(collection(db, "users", "anonymous", "links"), newFirestoreLink);
+      // 전체 데이터를 재페치하지 않고, 생성된 ID를 할당해 로컬 상태를 즉각 업데이트합니다.
+      const newLinkWithId: LinkType = {
+        id: docRef.id,
+        ...newFirestoreLink,
+      };
+      // 최신순(desc)이므로 새로운 링크는 맨 앞에 배치합니다.
+      setLinkList((prevList) => [newLinkWithId, ...prevList]);
     } catch (error) {
       console.error("Firestore에 링크를 추가하는 중 에러 발생:", error);
     }
@@ -175,7 +187,11 @@ export default function Page() {
 
   const activeLinks = linkList
     .filter((link) => link.isActive)
-    .sort((a, b) => a.order - b.order);
+    .sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime; // createdAt 최신순(desc) 정렬
+    });
 
   const fillPct = Math.min(wavesReceived * 1.8, 100);
 
