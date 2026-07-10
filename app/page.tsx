@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { links, Link as LinkType } from "@/data/links";
 import { db, auth, googleProvider } from "@/lib/firebase";
-import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc, getDoc, setDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc, getDoc, setDoc, where } from "firebase/firestore";
 import { signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth";
 import {
   BookOpen,
@@ -19,6 +19,7 @@ import {
   X,
   Trash2,
   Loader2,
+  Settings,
 } from "lucide-react";
 import LinkAddDialog from "@/components/LinkAddDialog";
 
@@ -96,13 +97,26 @@ export default function Page() {
   // 로그인 상태 및 프로필 정보 상태 추가
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [profileInfo, setProfileInfo] = useState<{ username: string; bio: string; avatarUrl: string } | null>(null);
+  const [profileInfo, setProfileInfo] = useState<{ username: string; displayName: string; bio: string; avatarUrl: string } | null>(null);
+
+  // 프로필 수정 다이얼로그 모달 상태 추가
+  const [isProfileEditOpen, setIsProfileEditOpen] = useState(false);
+  const [editUsername, setEditUsername] = useState("");
+  const [editDisplayName, setEditDisplayName] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [profileErrors, setProfileErrors] = useState<{ username?: string; displayName?: string; bio?: string }>({});
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+
+  // 이메일 앞부분 아이디 추출 헬퍼 함수
+  const getMyId = (currentUser: User) => {
+    return currentUser.email ? currentUser.email.split("@")[0] : currentUser.uid;
+  };
 
   // Firestore로부터 링크 데이터 로드 함수
-  const fetchLinks = async (uid: string) => {
+  const fetchLinks = async (myId: string) => {
     setIsLoading(true);
     try {
-      const q = query(collection(db, "users", uid, "links"), orderBy("createdAt", "desc"));
+      const q = query(collection(db, "users", myId, "links"), orderBy("createdAt", "desc"));
       const querySnapshot = await getDocs(q);
       const fetchedLinks: LinkType[] = [];
       querySnapshot.forEach((doc) => {
@@ -119,7 +133,7 @@ export default function Page() {
           // 인스턴스 정렬 순서 유지를 위해 시간차 적용 (idx가 작을수록 더 최신 시간)
           const seedDate = new Date();
           seedDate.setSeconds(seedDate.getSeconds() - idx * 10);
-          return addDoc(collection(db, "users", uid, "links"), {
+          return addDoc(collection(db, "users", myId, "links"), {
             ...dataWithoutId,
             createdAt: seedDate.toISOString(),
           });
@@ -154,24 +168,32 @@ export default function Page() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
+        const myId = getMyId(currentUser);
         
         try {
-          const userDocRef = doc(db, "users", currentUser.uid);
+          const userDocRef = doc(db, "users", myId);
           const userDocSnap = await getDoc(userDocRef);
           
           if (userDocSnap.exists()) {
             const data = userDocSnap.data();
+            const profileData = data.profile || {};
             setProfileInfo({
-              username: data.username || currentUser.displayName || "무명 유저",
-              bio: data.bio || "나만의 링크 공간입니다. ✨",
+              username: profileData.username || data.displayName || myId,
+              displayName: profileData.displayName || data.username || currentUser.displayName || "무명 유저",
+              bio: profileData.bio || data.bio || "나만의 링크 공간입니다. ✨",
               avatarUrl: data.avatarUrl || currentUser.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80",
             });
             setWavesReceived(data.waves || 42);
           } else {
             // 유저 정보 문서가 없으면 최초 Google 정보를 기반으로 자동 Seed 생성
             const initialProfile = {
+              profile: {
+                username: myId,
+                displayName: currentUser.displayName || "무명 유저",
+                bio: "나만의 링크 공간입니다. ✨",
+              },
+              displayName: myId,
               username: currentUser.displayName || "무명 유저",
-              displayName: currentUser.email?.split("@")[0] || currentUser.uid.substring(0, 10),
               bio: "나만의 링크 공간입니다. ✨",
               avatarUrl: currentUser.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80",
               createdAt: new Date().toISOString(),
@@ -179,15 +201,16 @@ export default function Page() {
             };
             await setDoc(userDocRef, initialProfile);
             setProfileInfo({
-              username: initialProfile.username,
-              bio: initialProfile.bio,
+              username: initialProfile.profile.username,
+              displayName: initialProfile.profile.displayName,
+              bio: initialProfile.profile.bio,
               avatarUrl: initialProfile.avatarUrl,
             });
             setWavesReceived(42);
           }
           
           // 링크 데이터 조회
-          await fetchLinks(currentUser.uid);
+          await fetchLinks(myId);
         } catch (error) {
           console.error("사용자 정보 연동 에러:", error);
         }
@@ -205,6 +228,7 @@ export default function Page() {
 
   const handleAddLink = async (newLinkData: Omit<LinkType, "id" | "order" | "clickCount">) => {
     if (!user) return;
+    const myId = getMyId(user);
     const maxOrder = linkList.length > 0 ? Math.max(...linkList.map((l) => l.order)) : -1;
     const order = maxOrder + 1;
     const createdAt = new Date().toISOString();
@@ -217,9 +241,9 @@ export default function Page() {
     };
 
     try {
-      await addDoc(collection(db, "users", user.uid, "links"), newFirestoreLink);
+      await addDoc(collection(db, "users", myId, "links"), newFirestoreLink);
       // 변경사항이 있으므로 fetchLinks()를 재호출하여 최신 데이터를 가져옵니다.
-      await fetchLinks(user.uid);
+      await fetchLinks(myId);
     } catch (error) {
       console.error("Firestore에 링크를 추가하는 중 에러 발생:", error);
     }
@@ -244,6 +268,7 @@ export default function Page() {
   // 인라인 편집 저장 핸들러
   const handleSaveEdit = async (linkId: string) => {
     if (!user) return;
+    const myId = getMyId(user);
     const newErrors: { title?: string; url?: string } = {};
 
     if (!editTitle.trim()) {
@@ -275,7 +300,7 @@ export default function Page() {
     }
 
     try {
-      const docRef = doc(db, "users", user.uid, "links", linkId);
+      const docRef = doc(db, "users", myId, "links", linkId);
       await updateDoc(docRef, {
         title: editTitle.trim(),
         url: editUrl.trim(),
@@ -284,7 +309,7 @@ export default function Page() {
       });
 
       // 변경사항이 있으므로 fetchLinks()를 재호출하여 최신 데이터를 가져옵니다.
-      await fetchLinks(user.uid);
+      await fetchLinks(myId);
 
       setEditingLinkId(null);
       setEditTitle("");
@@ -312,14 +337,15 @@ export default function Page() {
   // 삭제 실행 핸들러
   const handleExecuteDelete = async () => {
     if (!deleteLinkId || !user) return;
+    const myId = getMyId(user);
     setIsDeleting(true);
 
     try {
-      const docRef = doc(db, "users", user.uid, "links", deleteLinkId);
+      const docRef = doc(db, "users", myId, "links", deleteLinkId);
       await deleteDoc(docRef);
 
       // 변경사항이 있으므로 fetchLinks()를 재호출하여 최신 데이터를 가져옵니다.
-      await fetchLinks(user.uid);
+      await fetchLinks(myId);
 
       // 모달 상태 초기화
       setDeleteLinkId(null);
@@ -328,6 +354,104 @@ export default function Page() {
       console.error("Firestore 링크 삭제 중 에러 발생:", error);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // 프로필 편집 시작 모달 오픈
+  const handleStartProfileEdit = () => {
+    if (!profileInfo) return;
+    setEditUsername(profileInfo.username);
+    setEditDisplayName(profileInfo.displayName);
+    setEditBio(profileInfo.bio);
+    setProfileErrors({});
+    setIsProfileEditOpen(true);
+  };
+
+  // 프로필 편집 저장 처리
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    const myId = getMyId(user);
+    const errors: typeof profileErrors = {};
+
+    // username 포맷 검사
+    const cleanUsername = editUsername.trim();
+    if (!cleanUsername) {
+      errors.username = "공유 URL용 아이디를 입력해주세요.";
+    } else if (!/^[a-z0-9_-]{3,20}$/.test(cleanUsername)) {
+      errors.username = "3~20자의 영문 소문자, 숫자, 특수문자(_, -)만 사용 가능합니다.";
+    }
+
+    const cleanDisplayName = editDisplayName.trim();
+    if (!cleanDisplayName) {
+      errors.displayName = "표시 이름을 입력해주세요.";
+    } else if (cleanDisplayName.length > 30) {
+      errors.displayName = "이름은 최대 30자까지 입력 가능합니다.";
+    }
+
+    const cleanBio = editBio.trim();
+    if (cleanBio.length > 150) {
+      errors.bio = "소개글은 최대 150자까지 입력 가능합니다.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setProfileErrors(errors);
+      return;
+    }
+
+    setIsProfileSaving(true);
+    setProfileErrors({});
+
+    try {
+      // 1. username 중복 체크
+      const usersRef = collection(db, "users");
+      const q = query(usersRef, where("profile.username", "==", cleanUsername));
+      const querySnapshot = await getDocs(q);
+
+      let isDuplicate = false;
+      querySnapshot.forEach((doc) => {
+        // 본인의 문서 ID가 아니면 중복입니다.
+        if (doc.id !== myId) {
+          isDuplicate = true;
+        }
+      });
+
+      if (isDuplicate) {
+        setProfileErrors({ username: "이미 사용 중인 URL용 아이디입니다." });
+        setIsProfileSaving(false);
+        return;
+      }
+
+      // 2. Firestore에 저장
+      const userDocRef = doc(db, "users", myId);
+      await updateDoc(userDocRef, {
+        profile: {
+          username: cleanUsername,
+          displayName: cleanDisplayName,
+          bio: cleanBio,
+        },
+        displayName: cleanUsername,
+        username: cleanDisplayName,
+        bio: cleanBio,
+      });
+
+      // 3. 로컬 상태 업데이트
+      setProfileInfo((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          username: cleanUsername,
+          displayName: cleanDisplayName,
+          bio: cleanBio,
+        };
+      });
+
+      setIsProfileEditOpen(false);
+    } catch (error) {
+      console.error("프로필 정보 업데이트 실패:", error);
+      setProfileErrors({ username: "저장하는 중 에러가 발생했습니다." });
+    } finally {
+      setIsProfileSaving(false);
     }
   };
 
@@ -352,6 +476,7 @@ export default function Page() {
   // Wave Action
   const handleSendWave = async () => {
     if (!user) return;
+    const myId = getMyId(user);
     setWaveAnimating(true);
     setRippleEffect(true);
     setWaveCompleted(true);
@@ -360,7 +485,7 @@ export default function Page() {
     setWavesReceived(newWaves);
 
     try {
-      const userDocRef = doc(db, "users", user.uid);
+      const userDocRef = doc(db, "users", myId);
       await updateDoc(userDocRef, {
         waves: newWaves,
       });
@@ -492,7 +617,7 @@ export default function Page() {
                 <div className="relative w-28 h-28 rounded-full overflow-hidden border-[3px] border-zinc-950 bg-zinc-900">
                   <Image
                     src={profileInfo?.avatarUrl || user.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80"}
-                    alt={profileInfo?.username || user.displayName || "프로필"}
+                    alt={profileInfo?.displayName || user.displayName || "프로필"}
                     width={112}
                     height={112}
                     className="w-full h-full object-cover"
@@ -507,10 +632,13 @@ export default function Page() {
 
               {/* Username & Bio Area */}
               <div className="space-y-4 w-full">
-                <div className="flex items-center justify-center lg:justify-start gap-2">
-                  <h1 className="text-3xl font-black tracking-tight text-white">
-                    {profileInfo?.username || user.displayName || "무명 유저"}
+                <div className="flex flex-col items-center lg:items-start gap-1">
+                  <h1 className="text-3xl font-black tracking-tight text-white leading-tight">
+                    {profileInfo?.displayName}
                   </h1>
+                  <span className="text-[10px] font-mono text-zinc-500 tracking-wider">
+                    @{profileInfo?.username}
+                  </span>
                 </div>
 
                 <div className="text-sm text-purple-300 font-medium tracking-wide">
@@ -518,7 +646,7 @@ export default function Page() {
                 </div>
 
                 <p className="text-xs sm:text-sm text-slate-400 leading-relaxed font-normal max-w-sm mx-auto lg:mx-0">
-                  {profileInfo?.bio || "나만의 링크 공간입니다. ✨"}
+                  {profileInfo?.bio}
                 </p>
               </div>
 
@@ -546,13 +674,13 @@ export default function Page() {
 
               <hr className="w-24 border-zinc-800/60 my-2 lg:block hidden" />
 
-              {/* CTA Badge */}
-              <div className="pt-2">
+              {/* Action Badges */}
+              <div className="pt-2 flex flex-col items-center lg:items-start gap-2.5">
                 <a
-                  href={`/@${profileInfo?.username || user.displayName}`}
+                  href={`/@${profileInfo?.username || getMyId(user)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-violet-950/40 border border-violet-500/30 text-purple-200 text-xs font-semibold tracking-wide hover:bg-violet-900/50 shadow-lg shadow-violet-900/20 hover:scale-105 active:scale-[0.98] transition-all animate-pulse cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-violet-950/40 border border-violet-500/30 text-purple-200 text-xs font-semibold tracking-wide hover:bg-violet-900/50 shadow-lg shadow-violet-900/20 hover:scale-105 active:scale-[0.98] transition-all cursor-pointer"
                   style={{
                     boxShadow: "0 0 15px rgba(124, 58, 237, 0.15)",
                   }}
@@ -560,6 +688,15 @@ export default function Page() {
                   <span>✦ 내 공개 프로필 보기</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </a>
+
+                {/* 프로필 수정 트리거 버튼 */}
+                <button
+                  onClick={handleStartProfileEdit}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full bg-zinc-900/80 hover:bg-zinc-850 border border-zinc-800 text-zinc-350 text-xs font-semibold tracking-wide hover:text-white transition-all hover:scale-105 active:scale-[0.98] cursor-pointer"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>프로필 수정</span>
+                </button>
               </div>
             </aside>
 
@@ -966,6 +1103,146 @@ export default function Page() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Profile Edit Dialog Modal */}
+      {isProfileEditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
+            onClick={() => { if (!isProfileSaving) setIsProfileEditOpen(false); }}
+          />
+
+          {/* Modal Container */}
+          <form 
+            onSubmit={handleSaveProfile}
+            className="relative w-full max-w-md bg-[#13112b]/95 border border-zinc-800/80 rounded-2xl p-6 shadow-2xl z-10 flex flex-col animate-fade-in-down backdrop-blur-xl space-y-4"
+          >
+            {/* Header */}
+            <div className="flex items-center gap-2 border-b border-zinc-800/60 pb-4">
+              <span className="p-1.5 bg-violet-500/20 text-violet-400 rounded-lg">
+                <Settings className="w-5 h-5" />
+              </span>
+              <h2 className="text-lg font-bold text-white">내 프로필 수정</h2>
+            </div>
+
+            {/* Form Fields */}
+            <div className="space-y-4">
+              {/* URL용 아이디 (username) */}
+              <div>
+                <label className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  공유 URL용 아이디 (username)
+                </label>
+                <div className="flex rounded-xl overflow-hidden border border-zinc-800 focus-within:border-violet-500 transition-all bg-black/40">
+                  <span className="flex items-center justify-center px-3.5 text-xs text-zinc-550 border-r border-zinc-850 font-mono bg-zinc-950/30 select-none">
+                    /@
+                  </span>
+                  <input
+                    type="text"
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value.toLowerCase())}
+                    placeholder="아이디"
+                    maxLength={20}
+                    disabled={isProfileSaving}
+                    className="flex-1 px-3.5 py-2.5 text-sm text-zinc-100 bg-transparent focus:outline-none placeholder-zinc-600 disabled:opacity-50"
+                  />
+                </div>
+                {profileErrors.username ? (
+                  <p className="mt-1 text-xs text-red-400 flex items-center gap-1 animate-pulse">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {profileErrors.username}
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[10px] text-zinc-500 leading-normal">
+                    * 3~20자의 영문 소문자, 숫자, 특수기호(_, -)만 사용 가능합니다.
+                  </p>
+                )}
+              </div>
+
+              {/* 표시 이름 (displayName) */}
+              <div>
+                <label className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  표시 이름 (displayName)
+                </label>
+                <input
+                  type="text"
+                  value={editDisplayName}
+                  onChange={(e) => setEditDisplayName(e.target.value)}
+                  placeholder="표시될 닉네임"
+                  maxLength={30}
+                  disabled={isProfileSaving}
+                  className={`w-full px-3.5 py-2.5 bg-black/40 border ${
+                    profileErrors.displayName ? "border-red-500" : "border-zinc-800 focus:border-violet-500"
+                  } rounded-xl text-sm text-zinc-100 focus:outline-none transition-all disabled:opacity-50`}
+                />
+                {profileErrors.displayName && (
+                  <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {profileErrors.displayName}
+                  </p>
+                )}
+              </div>
+
+              {/* 한 줄 소개 (bio) */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    한 줄 소개 (bio)
+                  </label>
+                  <span className="text-[10px] text-zinc-550 font-mono">
+                    {editBio.length} / 150자
+                  </span>
+                </div>
+                <textarea
+                  value={editBio}
+                  onChange={(e) => setEditBio(e.target.value)}
+                  placeholder="자신을 나타내는 소개글을 입력하세요"
+                  maxLength={150}
+                  disabled={isProfileSaving}
+                  className={`w-full h-24 px-3.5 py-2.5 bg-black/40 border ${
+                    profileErrors.bio ? "border-red-500" : "border-zinc-800 focus:border-violet-500"
+                  } rounded-xl text-sm text-zinc-100 focus:outline-none resize-none leading-relaxed transition-all disabled:opacity-50`}
+                />
+                {profileErrors.bio && (
+                  <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    {profileErrors.bio}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-3 border-t border-zinc-850">
+              <button
+                type="button"
+                onClick={() => setIsProfileEditOpen(false)}
+                disabled={isProfileSaving}
+                className="flex-1 py-2.5 text-xs font-semibold text-zinc-400 hover:text-zinc-200 bg-zinc-900/60 border border-zinc-800/80 rounded-xl hover:bg-zinc-900 transition-all cursor-pointer disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={isProfileSaving}
+                className="flex-1 py-2.5 text-xs font-semibold text-white bg-gradient-to-r from-violet-600 to-indigo-600 rounded-xl hover:opacity-90 transition-all shadow-lg shadow-violet-950/20 active:scale-[0.98] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                {isProfileSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>저장 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>저장하기</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

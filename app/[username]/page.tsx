@@ -15,7 +15,7 @@ import {
   Loader2
 } from "lucide-react"
 import { db, auth, googleProvider } from "@/lib/firebase"
-import { collection, getDocs, query, where, limit, doc, updateDoc, getDoc, orderBy } from "firebase/firestore"
+import { collection, getDocs, query, doc, updateDoc, getDoc, orderBy, where, limit } from "firebase/firestore"
 import { signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth"
 
 // Custom SVG Icons to avoid Lucide compatibility issues
@@ -90,7 +90,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
   const [loading, setLoading] = useState(true)
   const [isOwner, setIsOwner] = useState(false)
   const [profile, setProfile] = useState<ProfileData | null>(null)
-  const [profileOwnerUid, setProfileOwnerUid] = useState<string | null>(null)
+  const [profileOwnerId, setProfileOwnerId] = useState<string | null>(null)
 
   // Auth States
   const [currentUser, setCurrentUser] = useState<User | null>(null)
@@ -109,33 +109,32 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Firestore에서 프로필 유저 정보 및 링크 패치
+  // Firestore에서 URL용 아이디(profile.username == targetDisplayName)로 검색하여 정보 로드
   const fetchProfileAndLinks = async (targetDisplayName: string) => {
     setLoading(true)
     try {
       const usersRef = collection(db, "users")
-      const q = query(usersRef, where("displayName", "==", targetDisplayName), limit(1))
+      const q = query(usersRef, where("profile.username", "==", targetDisplayName), limit(1))
       const querySnapshot = await getDocs(q)
       
       if (!querySnapshot.empty) {
         const userDoc = querySnapshot.docs[0]
         const userData = userDoc.data()
-        const uid = userDoc.id
-        setProfileOwnerUid(uid)
+        const ownerId = userDoc.id // 실제 물리적 문서 Key (이메일 앞부분 아이디)
+        setProfileOwnerId(ownerId)
         
         // 파도 개수 설정
         const currentWaves = userData.waves || 42
         setWavesReceived(currentWaves)
 
         // 하위 링크 목록 패치
-        const linksRef = collection(db, "users", uid, "links")
+        const linksRef = collection(db, "users", ownerId, "links")
         const linksQuery = query(linksRef, orderBy("createdAt", "desc"))
         const linksSnap = await getDocs(linksQuery)
         const fetchedLinks: ProfileData["links"] = []
         
         linksSnap.forEach((doc) => {
           const data = doc.data()
-          // 활성화된 링크만 수집
           if (data.isActive !== false) {
             fetchedLinks.push({
               id: doc.id,
@@ -150,10 +149,11 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
           }
         })
 
+        const profileData = userData.profile || {}
         setProfile({
-          username: userData.username || userData.displayName || "무명 유저",
-          displayName: userData.displayName || targetDisplayName,
-          bio: userData.bio || "나만의 링크 공간입니다. ✨",
+          username: profileData.username || userData.displayName || ownerId,
+          displayName: profileData.displayName || userData.username || "무명 유저",
+          bio: profileData.bio || userData.bio || "나만의 링크 공간입니다. ✨",
           avatarUrl: userData.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&fit=crop&q=80",
           isOnline: true,
           waves: currentWaves,
@@ -172,10 +172,8 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
 
   // Initialize Data & Auth Observer
   useEffect(() => {
-    // 1. 프로필 정보 쿼리 실행
     fetchProfileAndLinks(displayName)
 
-    // 2. Firebase Auth 감지 구독
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user)
       setAuthLoading(false)
@@ -186,20 +184,38 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
 
   // 소유자 여부 자동 매핑 Effect
   useEffect(() => {
-    if (currentUser && profileOwnerUid) {
-      setIsOwner(currentUser.uid === profileOwnerUid)
+    if (currentUser && profile && profileOwnerId) {
+      // 본인 여부 확인
+      const currentUserEmailId = currentUser.email ? currentUser.email.split("@")[0] : currentUser.uid
+      setIsOwner(currentUserEmailId === profileOwnerId)
     } else {
       setIsOwner(false)
     }
-  }, [currentUser, profileOwnerUid])
+  }, [currentUser, profile, profileOwnerId])
 
   // Save to Firestore helper
   const saveProfileData = async (updated: Partial<ProfileData>) => {
-    if (!profileOwnerUid || !profile) return
+    if (!profileOwnerId || !profile) return
     setIsSaving(true)
     try {
-      const userDocRef = doc(db, "users", profileOwnerUid)
-      await updateDoc(userDocRef, updated)
+      const userDocRef = doc(db, "users", profileOwnerId)
+      
+      // 업데이트 데이터의 맵 필드 구조화 및 하위 호환 필드 세팅
+      const updatePayload: any = {}
+      if (updated.username !== undefined) {
+        updatePayload["profile.username"] = updated.username
+        updatePayload["displayName"] = updated.username
+      }
+      if (updated.displayName !== undefined) {
+        updatePayload["profile.displayName"] = updated.displayName
+        updatePayload["username"] = updated.displayName
+      }
+      if (updated.bio !== undefined) {
+        updatePayload["profile.bio"] = updated.bio
+        updatePayload["bio"] = updated.bio
+      }
+      
+      await updateDoc(userDocRef, updatePayload)
       
       const newProfile = { ...profile, ...updated }
       setProfile(newProfile)
@@ -217,9 +233,8 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
       showToast("소유자는 본인 페이지에 파도를 보낼 수 없습니다.")
       return
     }
-    if (!profileOwnerUid) return
+    if (!profileOwnerId) return
     
-    // 카운터 애니메이션 트리거
     setWaveAnimating(true)
     setRippleEffect(true)
     setWaveCompleted(true)
@@ -228,8 +243,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
     setWavesReceived(newWaves)
 
     try {
-      // 파도 데이터를 DB에 누적 기록합니다.
-      const userDocRef = doc(db, "users", profileOwnerUid)
+      const userDocRef = doc(db, "users", profileOwnerId)
       await updateDoc(userDocRef, {
         waves: newWaves
       })
@@ -237,17 +251,14 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
       console.error("Firestore 파도 갱신 중 오류 발생:", error)
     }
 
-    // 600ms 뒤 완료 상태 원복
     setTimeout(() => {
       setWaveCompleted(false)
     }, 600)
 
-    // 900ms 뒤 리플 애니메이션 종료
     setTimeout(() => {
       setRippleEffect(false)
     }, 900)
 
-    // 400ms 뒤 bounce 스케일 원복
     setTimeout(() => {
       setWaveAnimating(false)
     }, 400)
@@ -276,8 +287,38 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
         showToast("이름은 최대 30자까지 입력 가능합니다.")
         return
       }
-      await saveProfileData({ username: editUsernameVal.trim() })
-      showToast("이름이 성공적으로 저장되었습니다.")
+      // 중복 체크 및 URL 포맷 체크
+      const cleanUsername = editUsernameVal.trim();
+      if (!/^[a-z0-9_-]{3,20}$/.test(cleanUsername)) {
+        showToast("3~20자의 영문 소문자, 숫자, 특수기호(_, -)만 사용 가능합니다.");
+        return;
+      }
+
+      setIsSaving(true)
+      try {
+        const usersRef = collection(db, "users")
+        const q = query(usersRef, where("profile.username", "==", cleanUsername))
+        const querySnapshot = await getDocs(q)
+        let isDuplicate = false
+        querySnapshot.forEach((doc) => {
+          if (doc.id !== profileOwnerId) {
+            isDuplicate = true
+          }
+        })
+
+        if (isDuplicate) {
+          showToast("이미 사용 중인 URL용 아이디입니다.")
+          setIsSaving(false)
+          return
+        }
+
+        await saveProfileData({ username: cleanUsername })
+        showToast("이름이 성공적으로 저장되었습니다.")
+      } catch (error) {
+        showToast("저장에 실패했습니다.")
+      } finally {
+        setIsSaving(false)
+      }
     } else if (field === "bio") {
       if (editBioVal.length > 150) {
         showToast("한 줄 소개는 최대 150자까지 입력 가능합니다.")
@@ -291,7 +332,6 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
 
   const handleAvatarChange = async () => {
     if (!profile) return
-    // 아바타 랜덤 변경 모사 및 DB 동기화
     const randomAvatars = [
       "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=300&fit=crop&q=80",
       "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&fit=crop&q=80",
@@ -526,7 +566,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                   <input
                     type="text"
                     value={editUsernameVal}
-                    onChange={(e) => setEditUsernameVal(e.target.value)}
+                    onChange={(e) => setEditUsernameVal(e.target.value.toLowerCase())}
                     maxLength={30}
                     disabled={isSaving}
                     className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white outline-none focus:border-indigo-500 text-sm font-bold text-center lg:text-left disabled:opacity-50"
@@ -540,19 +580,24 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-center lg:justify-start gap-2 group/title">
-                  <h1 className="text-3xl font-black tracking-tight text-white">
-                    {profile?.username}
-                  </h1>
-                  {isOwner && (
-                    <button 
-                      onClick={() => startEdit("username")} 
-                      className="p-1 text-zinc-500 hover:text-white transition-colors cursor-pointer"
-                      title="이름 수정"
-                    >
-                      <EditIcon className="w-4 h-4" />
-                    </button>
-                  )}
+                <div className="flex flex-col items-center lg:items-start gap-1">
+                  <div className="flex items-center justify-center lg:justify-start gap-2 group/title">
+                    <h1 className="text-3xl font-black tracking-tight text-white leading-tight">
+                      {profile?.displayName}
+                    </h1>
+                    {isOwner && (
+                      <button 
+                        onClick={() => startEdit("username")} 
+                        className="p-1 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                        title="이름 수정"
+                      >
+                        <EditIcon className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500 tracking-wider">
+                    @{profile?.username}
+                  </span>
                 </div>
               )}
 
@@ -641,7 +686,6 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                 </div>
               ) : (
                 profile?.links.map((link, idx) => {
-                  // 플랫폼별 유리 틴트 스타일링
                   const tintStyles = {
                     github: "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 text-white",
                     blog: "bg-emerald-500/10 border-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/30 text-emerald-300",
